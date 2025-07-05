@@ -83,17 +83,35 @@ class DoctorSerializers(serializers.ModelSerializer):
 
      
 
+# class AppointmentSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = Appointment
+#         fields = [
+            
+#             'patient_id',
+#             'doctor_id',
+#             'request_date',
+#             'appointment_date',
+#             'medical_report',
+
+#         ]
+#         read_only_fields = ['id', 'request_date', 'approved_date', 'appointment_status']
+
+
 class AppointmentSerializer(serializers.ModelSerializer):
+    is_completed = serializers.SerializerMethodField()
+
     class Meta:
         model = Appointment
         fields = [
-            
             'patient_id',
             'doctor_id',
             'request_date',
             'appointment_date',
             'medical_report',
+            'is_completed',
         ]
         read_only_fields = ['id', 'request_date', 'approved_date', 'appointment_status']
 
-
+    def get_is_completed(self, obj):
+        return bool(obj.medical_report is not None and obj.medical_report.strip() != '')

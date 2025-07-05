@@ -1,3 +1,4 @@
+from ALAZEM import settings
 from .models import Patient , PatientStatus , PendingPatientStatus , Doctor , Appointment ,AppointmentStatus, RegistrationPatientStatus
 from django.utils import timezone
 
@@ -11,6 +12,8 @@ from users.models import User , Role
 from rest_framework.permissions import IsAuthenticated 
 from rest_framework.views import APIView
 from ALAZEM.midlware.role_protection import IsDoctorRole , IsAdminManagerRole , IsPatientRole
+from django.core.mail import send_mail
+
 
 
 @api_view(['POST'])
@@ -309,17 +312,129 @@ def create_appointment(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+# @api_view(['POST'])
+# @permission_classes([IsAuthenticated , IsDoctorRole])
+# def approve_appointment(request, appointment_id):
+#     try:
+#         appointment = Appointment.objects.get(id=appointment_id)
+#     except Appointment.DoesNotExist:
+#         return Response({'error': 'Appointment not found'}, status=status.HTTP_404_NOT_FOUND)
+
+#     # Update the appointment status and approved date
+#     appointment.appointment_status = AppointmentStatus.APPROVAL
+#     appointment.approved_date = timezone.now()  # Set the current date as the approved date
+#     appointment.save()
+
+#     return Response({'message': 'Appointment approved successfully!', 'appointment_id': appointment.id}, status=status.HTTP_200_OK)
+
+
+
+
+
+
+
 @api_view(['POST'])
-@permission_classes([IsAuthenticated , IsDoctorRole])
-def approve_appointment(request, appointment_id):
+@permission_classes([IsAuthenticated, IsDoctorRole])
+def update_appointment_status(request, appointment_id):
     try:
         appointment = Appointment.objects.get(id=appointment_id)
     except Appointment.DoesNotExist:
         return Response({'error': 'Appointment not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    # Update the appointment status and approved date
-    appointment.appointment_status = AppointmentStatus.APPROVAL
-    appointment.approved_date = timezone.now()  # Set the current date as the approved date
+    action = request.data.get('action')
+
+    if action not in ['approve', 'reject']:
+        return Response({'error': 'Invalid action. Must be "approve" or "reject".'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if action == 'approve':
+        appointment.appointment_status = AppointmentStatus.APPROVAL
+        appointment.approved_date = timezone.now()
+        appointment.save()
+        return Response({'message': 'Appointment approved.', 'appointment_id': appointment.id}, status=status.HTTP_200_OK)
+    
+    else:  # reject
+        appointment.appointment_status = AppointmentStatus.REJECTED
+        appointment.save()
+
+        # manager_email = "manager@example.com"  # or fetch dynamically
+        # send_mail(
+        #     subject="Appointment Rejected",
+        #     message=f"Appointment {appointment.id} for patient {appointment.patient_id} has been rejected by the doctor.",
+        #     from_email=settings.DEFAULT_FROM_EMAIL,
+        #     recipient_list=[manager_email],
+        #     fail_silently=True,
+        # )
+
+        return Response({'message': 'Appointment rejected.', 'appointment_id': appointment.id}, status=status.HTTP_200_OK)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsDoctorRole])
+def update_medical_report(request, appointment_id):
+    try:
+        appointment = Appointment.objects.get(id=appointment_id)
+    except Appointment.DoesNotExist:
+        return Response({'error': 'Appointment not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if appointment.appointment_status != AppointmentStatus.APPROVAL:
+        return Response({'error': 'Medical report can only be updated for approved appointments.'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+    medical_report = request.data.get('medical_report')
+    if medical_report is None:
+        return Response({'error': 'Medical report is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    appointment.medical_report = medical_report
     appointment.save()
 
-    return Response({'message': 'Appointment approved successfully!', 'appointment_id': appointment.id}, status=status.HTTP_200_OK)
+    return Response({'message': 'Medical report updated.', 'appointment_id': appointment.id}, status=status.HTTP_200_OK)
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsDoctorRole])
+def doctor_appointments(request):
+    doctor = request.user.doctor  # Assumes the logged-in user is linked to a Doctor model
+    appointments = Appointment.objects.filter(doctor_id=doctor).order_by('-appointment_date')
+
+    serializer = AppointmentSerializer(appointments, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsPatientRole])
+def patient_approved_appointments(request):
+    try:
+        patient = request.user.patient  # Assumes User has OneToOne with Patient
+    except AttributeError:
+        return Response({'error': 'User is not linked to a patient.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Start with approved appointments
+    approved_appointments = Appointment.objects.filter(
+        patient_id=patient,
+        appointment_status=AppointmentStatus.APPROVAL
+    ).order_by('-appointment_date')
+
+    # Optional filter for completion status
+    completed_filter = request.query_params.get('completed', None)
+
+    if completed_filter is not None:
+        if completed_filter.lower() == 'true':
+            approved_appointments = approved_appointments.exclude(medical_report__isnull=True).exclude(medical_report__exact="")
+        elif completed_filter.lower() == 'false':
+            approved_appointments = approved_appointments.filter(medical_report__isnull=True) | approved_appointments.filter(medical_report__exact="")
+
+    serialized = AppointmentSerializer(approved_appointments, many=True)
+    return Response(serialized.data, status=status.HTTP_200_OK)
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminManagerRole])
+def get_all_appointments(request):
+   # patient = request.user.patient  # Assumes the logged-in user is linked to a Doctor model
+    appointments = Appointment.objects.all().order_by('-appointment_date')
+
+    serializer = AppointmentSerializer(appointments, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)

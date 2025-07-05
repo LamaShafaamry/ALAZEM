@@ -155,7 +155,7 @@ def get_volunteer(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsAdminManagerRole])
-def update_volunteer_status(request, volunteer_id):
+def change_volunteer_status(request, volunteer_id):
     status_choice = request.data.get('status')
 
     # Ensure valid status
@@ -170,7 +170,8 @@ def update_volunteer_status(request, volunteer_id):
     return Response({'message': f'Volunteer status updated to {volunteer.status}.', 'data': serializer.data}, status=status.HTTP_200_OK)
 
 
-@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
+
+@api_view(['GET','POST'])
 @permission_classes([IsAuthenticated])
 def manage_own_profile(request):
     user = request.user

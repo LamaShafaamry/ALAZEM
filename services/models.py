@@ -6,7 +6,7 @@ from django.utils import timezone
 
 
 class Patient(models.Model):
-    user_id= models.ForeignKey(User, on_delete=models.CASCADE, null=False, blank=False)
+    user_id= models.OneToOneField(User, on_delete=models.CASCADE, null=False, blank=False)
     id =models.AutoField(primary_key=True,unique=True,editable=False)
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
@@ -77,7 +77,7 @@ class TransitionPatientStatus(models.Model):
 
 
 class Doctor(models.Model):
-    user_id= models.ForeignKey(User, on_delete=models.CASCADE, null=False, blank=False)
+    user_id= models.OneToOneField(User, on_delete=models.CASCADE, null=False, blank=False)
     id =models.AutoField(primary_key=True,unique=True,editable=False)
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
