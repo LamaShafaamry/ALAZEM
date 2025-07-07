@@ -1,9 +1,10 @@
 from django.contrib.auth import authenticate, login
 from django.contrib.auth.models import User as AuthUser 
 from django.http import JsonResponse
-from ALAZEM.midlware.role_protection import IsAdminManagerRole
-from users.models import Role ,User , Volunteer, VolunteerStatus
-from .serializers import Volunteerserializers
+from ALAZEM.midlware.role_protection import IsAdminManagerRole, IsManagerRole , IsVolunteerRole
+from services.models import Patient
+from users.models import Note, Role ,User , Volunteer, VolunteerStatus
+from .serializers import NoteSerializer, Volunteerserializers , VolunteerAssignmentSerializer, WithdrawalRequestSerializer, WithdrawalRequestSerializerForManager
 
 import json
 from rest_framework import status
@@ -171,27 +172,134 @@ def change_volunteer_status(request, volunteer_id):
 
 
 
-@api_view(['GET','POST'])
-@permission_classes([IsAuthenticated])
-def manage_own_profile(request):
-    user = request.user
 
-    if request.method in ['PUT', 'PATCH']:
-        # Update user fields
-        user_fields = ['username', 'email', 'first_name', 'last_name', 'phone']
-        for field in user_fields:
-            if field in request.data:
-                setattr(user, field, request.data[field])
-        user.save()
-        return Response({'message': 'Profile updated successfully.'}, status=status.HTTP_200_OK)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated , IsAdminManagerRole])  # customize if needed
+def assign_volunteer_to_patient(request):
+    serializer = VolunteerAssignmentSerializer(data=request.data)
+    if serializer.is_valid():
+        volunteer = serializer.save()
+        return Response({
+            'message': 'Volunteer assigned successfully.',
+            'volunteer_id': volunteer.id,
+            'patient_id': volunteer.patient_id.id,
+        }, status=status.HTTP_200_OK)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    elif request.method == 'DELETE':
-        user.delete()
-        return Response({'message': 'Your account has been deleted.'}, status=status.HTTP_204_NO_CONTENT)
 
-    elif request.method == 'GET':
-        from .serializers import UserSerializer  # Replace with actual path
-        serializer = UserSerializer(user)
-        return Response(serializer.data)
 
-    return Response({'error': 'Method not allowed.'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated , IsVolunteerRole])
+def add_note(request):
+    volunteer = Volunteer.objects.get(user_id=request.user)
+
+    # Check if volunteer is assigned to a patient
+    if not volunteer.patient_id:
+        return Response({'error': 'You are not assigned to any patient.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    content = request.data.get('content')
+
+    if not content:
+        return Response({'error': 'Content is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Create the note for the assigned patient
+    note = Note.objects.create(
+        patient_id=volunteer.patient_id,
+        volunteer_id=volunteer,
+        content=content
+    )
+
+    return Response({
+        'message': 'Note added successfully.',
+        'note': NoteSerializer(note).data
+    }, status=status.HTTP_201_CREATED)
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated , IsAdminManagerRole]) 
+def list_all_notes(request):
+    notes = Note.objects.select_related('patient_id', 'volunteer_id').all()
+    patient_id = request.query_params.get('patient_id', None)
+
+    if patient_id:
+        notes = notes.filter(patient_id__id=patient_id)
+
+    serializer = NoteSerializer(notes, many=True)
+    return Response(serializer.data)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsVolunteerRole])
+def request_withdrawal(request):
+    volunteer = Volunteer.objects.get(user_id=request.user)
+
+    if volunteer.withdrawal_requested:
+        return Response({'error': 'Withdrawal request already submitted.'}, status=400)
+
+    serializer = WithdrawalRequestSerializer(data=request.data)
+    if serializer.is_valid():
+        volunteer.withdrawal_requested = True
+        volunteer.save()
+        return Response({'message': 'Withdrawal request submitted successfully.'})
+    return Response(serializer.errors, status=400)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsManagerRole])
+def list_withdrawal_requests(request):
+    pending_volunteers = Volunteer.objects.filter(withdrawal_requested=True)
+    serializer = WithdrawalRequestSerializerForManager(pending_volunteers, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsAdminManagerRole])  
+def process_withdrawal_request(request, volunteer_id):
+    action = request.data.get('action')  
+
+    try:
+        volunteer = Volunteer.objects.get(id=volunteer_id, withdrawal_requested=True)
+    except Volunteer.DoesNotExist:
+        return Response({'error': 'No pending withdrawal request for this volunteer.'}, status=404)
+
+    if action == 'approve':
+        volunteer.status = VolunteerStatus.WITHDRAWN
+        volunteer.withdrawal_requested = False
+        volunteer.user_id.is_active = False  #  Deactivate account
+        volunteer.user_id.save()
+        volunteer.save()
+        return Response({'message': 'Volunteer withdrawn and account deactivated.'})
+
+    elif action == 'reject':
+        volunteer.withdrawal_requested = False
+        volunteer.save()
+        return Response({'message': 'Withdrawal request rejected.'})
+
+    return Response({'error': 'Invalid action.'}, status=400)
+
+# @api_view(['GET','POST'])
+# @permission_classes([IsAuthenticated])
+# def manage_own_profile(request):
+#     user = request.user
+
+#     if request.method in ['PUT', 'PATCH']:
+#         # Update user fields
+#         user_fields = ['username', 'email', 'first_name', 'last_name', 'phone']
+#         for field in user_fields:
+#             if field in request.data:
+#                 setattr(user, field, request.data[field])
+#         user.save()
+#         return Response({'message': 'Profile updated successfully.'}, status=status.HTTP_200_OK)
+
+#     elif request.method == 'DELETE':
+#         user.delete()
+#         return Response({'message': 'Your account has been deleted.'}, status=status.HTTP_204_NO_CONTENT)
+
+#     elif request.method == 'GET':
+#         from .serializers import UserSerializer  # Replace with actual path
+#         serializer = UserSerializer(user)
+#         return Response(serializer.data)
+
+#     return Response({'error': 'Method not allowed.'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)

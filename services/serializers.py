@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import Patient , PatientStatus , PendingPatientStatus , Doctor , Appointment
 
 class PatientSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = Patient
         fields = [
@@ -26,6 +27,7 @@ class PatientSerializer(serializers.ModelSerializer):
             'date_of_blindness',
         
         ]
+
 
 class UpdatePatientSerializer(serializers.ModelSerializer):
     class Meta:
@@ -82,20 +84,6 @@ class DoctorSerializers(serializers.ModelSerializer):
         ]
 
      
-
-# class AppointmentSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = Appointment
-#         fields = [
-            
-#             'patient_id',
-#             'doctor_id',
-#             'request_date',
-#             'appointment_date',
-#             'medical_report',
-
-#         ]
-#         read_only_fields = ['id', 'request_date', 'approved_date', 'appointment_status']
 
 
 class AppointmentSerializer(serializers.ModelSerializer):

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User , Role , Volunteer
+from .models import User , Role , Volunteer , Note
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
 
@@ -18,4 +18,14 @@ class UserAdmin(BaseUserAdmin):
         }),
     )
 
-admin.site.register(Volunteer)
+#admin.site.register(Volunteer)
+
+
+@admin.register(Volunteer)
+class VolunteerAdmin(admin.ModelAdmin):
+    list_display = ('id', 'first_name', 'last_name', 'patient_id')
+    search_fields = ('first_name', 'last_name')
+    autocomplete_fields = ['patient_id']
+
+
+admin.site.register(Note)

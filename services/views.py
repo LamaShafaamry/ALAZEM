@@ -18,10 +18,6 @@ from django.core.mail import send_mail
 
 @api_view(['POST'])
 def create_patient(request):
-    # user_data = request.data.get('user')
-    # if not user_data:
-    #     return Response({'error': 'User  data is required'}, status=status.HTTP_400_BAD_REQUEST)
-    # Create the user
     patient_role = Role.PATIENT   
 
     if patient_role is None:
@@ -170,7 +166,7 @@ def create_doctor(request):
 
     # Prepare doctor data
     doctor_data = {
-        "first_name": request.data.get('first_name'),  # Corrected key
+        "first_name": request.data.get('first_name'),  
         "last_name": request.data.get('last_name'),
         "speciality": request.data.get('speciality'),
         "user_id": user.id,
@@ -312,23 +308,6 @@ def create_appointment(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-# @api_view(['POST'])
-# @permission_classes([IsAuthenticated , IsDoctorRole])
-# def approve_appointment(request, appointment_id):
-#     try:
-#         appointment = Appointment.objects.get(id=appointment_id)
-#     except Appointment.DoesNotExist:
-#         return Response({'error': 'Appointment not found'}, status=status.HTTP_404_NOT_FOUND)
-
-#     # Update the appointment status and approved date
-#     appointment.appointment_status = AppointmentStatus.APPROVAL
-#     appointment.approved_date = timezone.now()  # Set the current date as the approved date
-#     appointment.save()
-
-#     return Response({'message': 'Appointment approved successfully!', 'appointment_id': appointment.id}, status=status.HTTP_200_OK)
-
-
-
 
 
 
@@ -433,7 +412,6 @@ def patient_approved_appointments(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdminManagerRole])
 def get_all_appointments(request):
-   # patient = request.user.patient  # Assumes the logged-in user is linked to a Doctor model
     appointments = Appointment.objects.all().order_by('-appointment_date')
 
     serializer = AppointmentSerializer(appointments, many=True)

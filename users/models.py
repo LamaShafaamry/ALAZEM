@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User ,AbstractUser
 from django.db import models
+from django.utils import timezone
 
 
 import uuid
@@ -12,7 +13,6 @@ from django.dispatch import receiver
 class Role(models.TextChoices):
        ADMIN =  'ADM', 'Admin'
        MANAGER = 'MAN' , ' Manager'      
-       DONATIONMANAGER = 'DMA', 'DonationManager'
        DOCTOR  = 'DOC' , 'Doctor'    
        PATIENT = 'PAT' , 'Patient'
        VOLUNTEE = 'VOL', 'Volunteer'
@@ -65,30 +65,23 @@ class Volunteer(models.Model):
             choices=VolunteerStatus.choices,
             default=VolunteerStatus.PENDING,
     )
+    withdrawal_requested = models.BooleanField(default=False) 
+    patient_id = models.OneToOneField('services.Patient', on_delete=models.SET_NULL, null=True, blank=True , related_name= 'assigned_volunteer')
+
 
     def __str__(self):
         return f"{self.id} - {self.first_name} {self.last_name}"
 
 
-
-"""
-class Position(models.Model):
-    STAFF_POSITION =[
-
-    ]
-    models.CharField(max_length=100)
-
-    def __str__(self):
-        return self.name
-
-
-class Staff(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
-    position = models.ForeignKey(Position, on_delete=models.SET_NULL, null=True)
-    joining_date = models.DateField(blank=True, null=True)
+class Note(models.Model):
+    id = models.AutoField(primary_key=True,unique=True,editable=False)
+    patient_id = models.ForeignKey('services.Patient', on_delete=models.SET_NULL, null=True, blank=True )
+    volunteer_id = models.ForeignKey(Volunteer, on_delete=models.SET_NULL, null=True, blank=True)
+    content = models.CharField(max_length = 50000, blank=True , null = True)
+    creation_date= models.DateTimeField(default=timezone.now())
 
     def __str__(self):
-        return f"Staff: {self.user.username}"#
-    
+         return f"{self.id} - {self.patient_id} : {self.volunteer_id}"
 
-"""
+
+

@@ -27,6 +27,7 @@ class Patient(models.Model):
     requirement_of_special_care = models.TextField(blank=True, null=True)
     residence_in_the_institution = models.BooleanField(default=False)
 
+
     def __str__(self):
         return f"{self.id} - {self.first_name} {self.last_name}"
 
