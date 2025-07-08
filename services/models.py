@@ -53,7 +53,7 @@ class RegistrationPatientStatus(models.Model):
     date = models.DateTimeField(default=timezone.now())
 
     def __str__(self):
-        return f"{self.patientStatus.patient_id.user_id} - {self.date} "
+        return f"{self.id} - {self.patientStatus.patient_id.first_name} {self.patientStatus.patient_id.last_name}"
 
 class DeathPatientStatus(models.Model):
     id = models.AutoField(primary_key=True,unique=True,editable=False)

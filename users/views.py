@@ -2,8 +2,8 @@ from django.contrib.auth import authenticate, login
 from django.contrib.auth.models import User as AuthUser 
 from django.http import JsonResponse
 from ALAZEM.midlware.role_protection import IsAdminManagerRole, IsManagerRole , IsVolunteerRole
-from services.models import Patient
-from users.models import Note, Role ,User , Volunteer, VolunteerStatus
+from services.models import Patient, RegistrationPatientStatus
+from users.models import Note, Role ,User , Volunteer, VolunteerStatus, WithdrawalRequest
 from .serializers import NoteSerializer, Volunteerserializers , VolunteerAssignmentSerializer, WithdrawalRequestSerializer, WithdrawalRequestSerializerForManager
 
 import json
@@ -18,18 +18,6 @@ from django.shortcuts import get_object_or_404
 
 from rest_framework_simplejwt.tokens import RefreshToken
 
-
-""" if form.is_valid():
-            user = form.save(commit=False)
-            user.role_id = Role.objects.get(role_name='Admin')  # Default role
-            user.save()
-            messages.success(request, 'Registration successful! Please wait for admin approval.')
-            return redirect('login')
-    else:
-        form = UserRegistrationForm()
-    return render(request, 'users/register.html', {'form': form})
-
-"""
 
 class LoginView(APIView):
     def post(self, request):
@@ -48,7 +36,7 @@ class LoginView(APIView):
                 'access': str(access_token),
             })
         else:
-            return Response({"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"detail": "Incorrect username or password"}, status=status.HTTP_401_UNAUTHORIZED)
 
 
 
@@ -64,15 +52,19 @@ def create_Volunteer(request):
         return Response("{'error' : 'You do not have permission to access this resource.'}, status=status.HTTP_403_FORBIDDEN)} {volunteer_role}")
 
 
+    if User.objects.filter(email=request.data.get('email')).exists():
+        return Response("{'error' : 'A user with this email already exists.'}") 
+    
 
     user = User.objects.create_user(
-        username=request.data.get('username'),
+        username=request.data.get('email'),
         password=request.data.get('password'),
-        email=request.data.get('email', ''),  # Optional email field
+        email=request.data.get('email'), 
         first_name= request.data.get("first_name"),
         last_name= request.data.get("last_name"),
         phone = request.data.get("phone"),
-        role = volunteer_role
+        role = volunteer_role,
+        is_active = False
     )
 
 
@@ -91,12 +83,12 @@ def create_Volunteer(request):
         "job": request.data.get("other_disability"),
         "previously_affiliated_associations": request.data.get("previously_affiliated_associations"),
         "user_id": user.id , # Associate the patient with the newly created user
-        #"status": request.data.get("status")
     }
 
     # Deserialize the incoming JSON data
     serializer = Volunteerserializers(data=volunteer_data)
     if serializer.is_valid():
+        
         volunteer = serializer.save()  # Save the patient using the serializer
         return Response({'message': 'Volunteer created successfully!', 'volunteer_id': str(volunteer.id)}, status=status.HTTP_201_CREATED)
 
@@ -140,19 +132,36 @@ def update_volunteer_profile(request):
 @permission_classes([IsAuthenticated , IsAdminManagerRole])
 def get_volunteer(request):
     volunteer_list = Volunteer.objects.all()
+    status_filter =request.query_params.get('status_filter', None)
     name = request.query_params.get('name', None)
     job = request.query_params.get('job', None)
-
+    print (VolunteerStatus.PENDING)
     if name:
         volunteer_list = volunteer_list.filter(first_name__icontains=name) | volunteer_list.filter(last_name__icontains=name) 
     if job:
         volunteer_list = volunteer_list.filter(job__icontains=volunteer_list)
-        
+    if status_filter and (status_filter == VolunteerStatus.PENDING or status_filter == VolunteerStatus.REGISTERED or status_filter == VolunteerStatus.REJECTED or status_filter== VolunteerStatus.WITHDRAWN):
+        volunteer_list = volunteer_list.filter(status = status_filter)
+
     serializer = Volunteerserializers(volunteer_list, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
   
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsVolunteerRole])
+def get_volunteer_profile(request):
 
+    try:
+        volunteer = Volunteer.objects.select_related('user_id').get(
+            user_id=request.user,
+            status=VolunteerStatus.REGISTERED,
+            user_id__is_active=True
+        )
+    except Volunteer.DoesNotExist:
+        return Response({"error": "Volunteer is either inactive or not registered."}, status=403)
+
+    serializer = Volunteerserializers(volunteer)
+    return Response(serializer.data)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsAdminManagerRole])
@@ -165,6 +174,8 @@ def change_volunteer_status(request, volunteer_id):
 
     volunteer = get_object_or_404(Volunteer, id=volunteer_id)
     volunteer.status = status_choice
+    volunteer.user_id.is_active= True
+    volunteer.user_id.save()
     volunteer.save()
 
     serializer = Volunteerserializers(volunteer)
@@ -187,15 +198,24 @@ def assign_volunteer_to_patient(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
 @api_view(['POST'])
-@permission_classes([IsAuthenticated , IsVolunteerRole])
+@permission_classes([IsAuthenticated, IsVolunteerRole])
 def add_note(request):
-    volunteer = Volunteer.objects.get(user_id=request.user)
+    volunteer = Volunteer.objects.select_related('user_id', 'patient_id').get(user_id=request.user)
 
-    # Check if volunteer is assigned to a patient
-    if not volunteer.patient_id:
-        return Response({'error': 'You are not assigned to any patient.'}, status=status.HTTP_400_BAD_REQUEST)
+    if volunteer.status != VolunteerStatus.REGISTERED or not volunteer.user_id.is_active:
+        return Response({"error": "Volunteer is not active or not registered."}, status=403)
+
+
+    patient = volunteer.patient_id  # Already assigned in your model
+
+
+    if not patient:
+        return Response({"error": "No patient assigned to this volunteer."}, status=400)
+    registed_patient_status = RegistrationPatientStatus.objects.filter(patientStatus__patient_id = patient)
+ 
+    if not registed_patient_status or not patient.user_id.is_active:
+        return Response({"error": "Assigned patient is not active or not registered."}, status=403)
 
     content = request.data.get('content')
 
@@ -216,6 +236,35 @@ def add_note(request):
 
 
 
+# @api_view(['POST'])
+# @permission_classes([IsAuthenticated , IsVolunteerRole])
+# def add_note(request):
+  
+#     volunteer = Volunteer.objects.get(user_id=request.user)
+
+#     # Check if volunteer is assigned to a patient
+#     if not volunteer.patient_id:
+#         return Response({'error': 'You are not assigned to any patient.'}, status=status.HTTP_400_BAD_REQUEST)
+
+#     content = request.data.get('content')
+
+#     if not content:
+#         return Response({'error': 'Content is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+#     # Create the note for the assigned patient
+#     note = Note.objects.create(
+#         patient_id=volunteer.patient_id,
+#         volunteer_id=volunteer,
+#         content=content
+#     )
+
+#     return Response({
+#         'message': 'Note added successfully.',
+#         'note': NoteSerializer(note).data
+#     }, status=status.HTTP_201_CREATED)
+
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated , IsAdminManagerRole]) 
 def list_all_notes(request):
@@ -230,54 +279,96 @@ def list_all_notes(request):
 
 
 
+# @api_view(['POST'])
+# @permission_classes([IsAuthenticated, IsVolunteerRole])
+# def request_withdrawal(request):
+#     volunteer = Volunteer.objects.get(user_id=request.user)
+
+#     if volunteer.withdrawal_requested:
+#         return Response({'error': 'Withdrawal request already submitted.'}, status=400)
+
+#     serializer = WithdrawalRequestSerializer(data=request.data)
+#     if serializer.is_valid():
+#         volunteer.withdrawal_requested = True
+#         volunteer.save()
+#         return Response({'message': 'Withdrawal request submitted successfully.'})
+#     return Response(serializer.errors, status=400)
+
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsVolunteerRole])
-def request_withdrawal(request):
+def submit_withdrawal_request(request):
     volunteer = Volunteer.objects.get(user_id=request.user)
 
-    if volunteer.withdrawal_requested:
-        return Response({'error': 'Withdrawal request already submitted.'}, status=400)
+    if hasattr(volunteer, 'withdrawal_request'):
+        return Response({'error': 'You have already submitted a withdrawal request.'}, status=400)
 
     serializer = WithdrawalRequestSerializer(data=request.data)
     if serializer.is_valid():
-        volunteer.withdrawal_requested = True
-        volunteer.save()
+        WithdrawalRequest.objects.create(
+            volunteer=volunteer,
+            cause=serializer.validated_data['cause']
+        )
         return Response({'message': 'Withdrawal request submitted successfully.'})
+    
     return Response(serializer.errors, status=400)
 
 
+
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, IsManagerRole])
+@permission_classes([IsAuthenticated, IsAdminManagerRole])
 def list_withdrawal_requests(request):
-    pending_volunteers = Volunteer.objects.filter(withdrawal_requested=True)
-    serializer = WithdrawalRequestSerializerForManager(pending_volunteers, many=True)
+    requests = WithdrawalRequest.objects.select_related('volunteer').all()
+    status = request.query_params.get('status', None)
+    if status:
+        requests = requests.filter(is_approved__icontains=status) 
+    
+    serializer = WithdrawalRequestSerializer(requests, many=True)
     return Response(serializer.data)
 
 
+  
+
 @api_view(['POST'])
-@permission_classes([IsAuthenticated, IsAdminManagerRole])  
-def process_withdrawal_request(request, volunteer_id):
-    action = request.data.get('action')  
-
+@permission_classes([IsAuthenticated, IsAdminManagerRole])
+def handle_withdrawal_request(request, request_id):
     try:
-        volunteer = Volunteer.objects.get(id=volunteer_id, withdrawal_requested=True)
-    except Volunteer.DoesNotExist:
-        return Response({'error': 'No pending withdrawal request for this volunteer.'}, status=404)
+        withdrawal = WithdrawalRequest.objects.get(id=request_id)
+    except WithdrawalRequest.DoesNotExist:
+        return Response({'error': 'Request not found'}, status=404)
 
-    if action == 'approve':
+    action = request.data.get('approve')
+    if action is None:
+        return Response({'error': 'Missing "approve" field (true/false)'}, status=400)
+
+    withdrawal.is_approved = bool(action)
+    withdrawal.save()
+
+    if action:
+        volunteer = withdrawal.volunteer
+        withdrawal.volunteer.user_id.is_active = False
+        withdrawal.volunteer.user_id.email = withdrawal.volunteer.user_id.email + "/deleted"
+        withdrawal.volunteer.user_id.username = withdrawal.volunteer.user_id.email
+        withdrawal.volunteer.user_id.save()
+
         volunteer.status = VolunteerStatus.WITHDRAWN
-        volunteer.withdrawal_requested = False
-        volunteer.user_id.is_active = False  #  Deactivate account
-        volunteer.user_id.save()
-        volunteer.save()
-        return Response({'message': 'Volunteer withdrawn and account deactivated.'})
 
-    elif action == 'reject':
-        volunteer.withdrawal_requested = False
-        volunteer.save()
-        return Response({'message': 'Withdrawal request rejected.'})
+        if volunteer.patient_id:
+            volunteer.patient_id = None
 
-    return Response({'error': 'Invalid action.'}, status=400)
+        volunteer.save()
+
+        return Response({'message': 'Request approved. Volunteer deactivated. unassigned from patient'})
+    else:
+        return Response({'message': 'Request rejected.'})
+
+
+
+
+
+
+
 
 # @api_view(['GET','POST'])
 # @permission_classes([IsAuthenticated])

@@ -1,5 +1,5 @@
 from ALAZEM import settings
-from .models import Patient , PatientStatus , PendingPatientStatus , Doctor , Appointment ,AppointmentStatus, RegistrationPatientStatus
+from .models import DeathPatientStatus, Patient , PatientStatus , PendingPatientStatus , Doctor , Appointment ,AppointmentStatus, RegistrationPatientStatus, TransitionPatientStatus
 from django.utils import timezone
 
 from rest_framework import status
@@ -23,16 +23,21 @@ def create_patient(request):
     if patient_role is None:
         return Response("{'error' : 'You do not have permission to access this resource.'}, status=status.HTTP_403_FORBIDDEN)} {patient_role}")
 
+    if User.objects.filter(email=request.data.get('email')).exists():
+        return Response("{'error' : 'A user with this email already exists.'}") 
+    
 
 
     user = User.objects.create_user(
-        username=request.data.get('username'),
+        username=request.data.get('email'),
         password=request.data.get('password'),
-        email=request.data.get('email', ''),  # Optional email field
+        email=request.data.get('email'),
         first_name= request.data.get("first_name"),
         last_name= request.data.get("last_name"),
         phone = request.data.get("phone"),
-        role = patient_role
+        role = patient_role,
+        is_active = False
+
     )
 
 
@@ -153,9 +158,13 @@ def create_doctor(request):
     if doctor_role is None:
         return Response({'error': 'You do not have permission to access this resource.'}, status=status.HTTP_403_FORBIDDEN)
 
+    if User.objects.filter(email=request.data.get('email')).exists():
+        return Response("{'error' : 'A user with this email already exists.'}") 
+    
+
     # Create the user
     user = User.objects.create_user(
-        username=request.data.get('username'),
+        username=request.data.get('email'),
         password=request.data.get('password'),
         email=request.data.get('email', ''),  # Optional email field
         first_name=request.data.get("first_name"),
@@ -188,11 +197,13 @@ def get_patients(request):
     patients_list = Patient.objects.all()
     name = request.query_params.get('name', None)
     status_filter = request.query_params.get('status_filter' , None)  # 'pending' or 'registered'
+    is_active = request.query_params.get('is_active' , None)
 
     if name:
         patients_list = patients_list.filter(first_name__icontains=name) | patients_list.filter(last_name__icontains=name)
     # serializer = PatientSerializer(patients_list, many=True)
     # return Response(serializer.data, status=status.HTTP_200_OK)
+
 
     if status_filter == 'pending':
         patients_list = patients_list.filter(
@@ -254,25 +265,51 @@ def get_users(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated , IsAdminManagerRole])
-def change_patient_status(request, pending_status_id):
-    try:
-        pending_status = PendingPatientStatus.objects.select_related('patientStatus').get(id=pending_status_id)
-    except PendingPatientStatus.DoesNotExist:
-        return Response({'error': 'Pending status not found.'}, status=status.HTTP_404_NOT_FOUND)
+def change_patient_status(request,patient_id):
+ 
+    patient_status = PatientStatus.objects.filter(patient_id__id = patient_id).first()
+    pendig_patient_status= patient_status.pending_statuses.first()
+    if pendig_patient_status is None:
+        return Response({'error': 'Pending Patient status not found.'}, status=status.HTTP_404_NOT_FOUND)
 
     action = request.data.get('action')  # 'approve' or 'reject'
 
     if action == 'approve':
         # Create RegistrationPatientStatus
         RegistrationPatientStatus.objects.create(
-            patientStatus=pending_status.patientStatus,
+            patientStatus=patient_status,
             date=timezone.now().date()
         )
-        pending_status.delete()
+
+        patient_status.patient_id.user_id.is_active =  True
+        patient_status.patient_id.user_id.save()
+        pendig_patient_status.delete()
+        return Response({'message': 'Patient approved and registered.'}, status=status.HTTP_200_OK)
+    
+    elif action == 'transition':
+        TransitionPatientStatus.objects.create(
+            patientStatus=patient_status,
+            date=timezone.now().date()
+        )
+
+        patient_status.patient_id.user_id.is_active =  False
+        patient_status.patient_id.user_id.save()
+        pendig_patient_status.delete()
+        return Response({'message': 'Patient approved and registered.'}, status=status.HTTP_200_OK)
+
+    elif action == 'death':
+        DeathPatientStatus.objects.create(
+            patientStatus=patient_status,
+            date=timezone.now().date()
+        )
+
+        patient_status.patient_id.user_id.is_active =  False
+        patient_status.patient_id.user_id.save()
+        pendig_patient_status.delete()
         return Response({'message': 'Patient approved and registered.'}, status=status.HTTP_200_OK)
 
     elif action == 'reject':
-        pending_status.delete()
+        pendig_patient_status.delete()
         return Response({'message': 'Patient application rejected.'}, status=status.HTTP_200_OK)
 
     else:

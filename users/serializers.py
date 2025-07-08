@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Volunteer , User , Note
+from .models import Volunteer , User , Note, WithdrawalRequest
 from services.models import Patient
 
 
@@ -13,12 +13,13 @@ class UserSerializer(serializers.ModelSerializer):
            'phone',
            'role',
         ]
-    
+
 
 class Volunteerserializers(serializers.ModelSerializer):
     class Meta:
         model = Volunteer
         fields = [
+            'id',
             'user_id',
             'first_name',
             'last_name',
@@ -93,13 +94,20 @@ class NoteSerializer(serializers.ModelSerializer):
 
 
 
-class WithdrawalRequestSerializer(serializers.Serializer):
-    confirm = serializers.BooleanField()
+class WithdrawalRequestSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WithdrawalRequest
+        fields = ['id', 'cause', 'is_approved', 'creation_date']
+        read_only_fields = ['id', 'is_approved', 'creation_date']
 
-    def validate_confirm(self, value):
-        if value is not True:
-            raise serializers.ValidationError("You must confirm the withdrawal request.")
-        return value
+
+# class WithdrawalRequestSerializer(serializers.Serializer):
+#     confirm = serializers.BooleanField()
+
+#     def validate_confirm(self, value):
+#         if value is not True:
+#             raise serializers.ValidationError("You must confirm the withdrawal request.")
+#         return value
 
 
 class WithdrawalRequestSerializerForManager(serializers.ModelSerializer):

@@ -22,6 +22,16 @@ class Role(models.TextChoices):
    
 class User(AbstractUser):
     phone = models.CharField(max_length=20, blank=True, null=True)
+    email= models.EmailField(
+        max_length=150,
+        unique=True,
+        help_text=(
+            "Required. 150 characters or fewer."
+        ),
+        error_messages={
+            "unique": ("A user with that emaiL already exists."),
+        },
+    )
     profile_image = models.ImageField(
         null=True, blank=True, upload_to='profiles/', default='profiles/user-default.png')
     role = models.CharField(
@@ -65,7 +75,6 @@ class Volunteer(models.Model):
             choices=VolunteerStatus.choices,
             default=VolunteerStatus.PENDING,
     )
-    withdrawal_requested = models.BooleanField(default=False) 
     patient_id = models.OneToOneField('services.Patient', on_delete=models.SET_NULL, null=True, blank=True , related_name= 'assigned_volunteer')
 
 
@@ -83,5 +92,16 @@ class Note(models.Model):
     def __str__(self):
          return f"{self.id} - {self.patient_id} : {self.volunteer_id}"
 
+
+
+class WithdrawalRequest(models.Model):
+    id = models.AutoField(primary_key=True,unique=True,editable=False)
+    volunteer = models.OneToOneField(Volunteer, on_delete=models.CASCADE, related_name='withdrawal_request')
+    cause = models.TextField()
+    is_approved = models.BooleanField(null=True, blank=True)  # None = pending, True = approved, False = rejected
+    creation_date = models.DateTimeField(default=timezone.now())
+
+    def __str__(self):
+        return f"{self.id} -Withdrawal Request from {self.volunteer.first_name} {self.volunteer.last_name} - {self.creation_date}"
 
 

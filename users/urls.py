@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import LoginView, list_all_notes, add_note , create_Volunteer, list_withdrawal_requests, process_withdrawal_request, request_withdrawal ,update_volunteer_profile , get_volunteer , change_volunteer_status , assign_volunteer_to_patient
+from .views import LoginView, list_all_notes, add_note , create_Volunteer, list_withdrawal_requests, handle_withdrawal_request, submit_withdrawal_request ,update_volunteer_profile , get_volunteer , change_volunteer_status , assign_volunteer_to_patient
 
 
 urlpatterns = [
@@ -12,8 +12,8 @@ urlpatterns = [
     path('assign/', assign_volunteer_to_patient, name= 'assign_volunteer_to_patient'),
     path('notes/add/', add_note, name='add_note'),
     path('notes/get/', list_all_notes, name='list_all_notes'),
-    path('withdrawal/request/', request_withdrawal, name='request_withdrawal'),
-    path('withdrawal/process/<int:volunteer_id>/', process_withdrawal_request, name='process_withdrawal_request'),
+    path('withdrawal/request/', submit_withdrawal_request, name='submit_withdrawal_request'),
+    path('withdrawal/process/<int:request_id>/', handle_withdrawal_request, name='handle_withdrawal_request'),
     path('withdrawal/requests/', list_withdrawal_requests, name='list_withdrawal_requests'),
 
 

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User , Role , Volunteer , Note
+from .models import User , Role , Volunteer , Note , WithdrawalRequest
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
 
@@ -29,3 +29,4 @@ class VolunteerAdmin(admin.ModelAdmin):
 
 
 admin.site.register(Note)
+admin.site.register(WithdrawalRequest)
