@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User ,AbstractUser
 from django.db import models
+from django.utils import timezone
 
 
 import uuid
@@ -12,7 +13,6 @@ from django.dispatch import receiver
 class Role(models.TextChoices):
        ADMIN =  'ADM', 'Admin'
        MANAGER = 'MAN' , ' Manager'      
-       DONATIONMANAGER = 'DMA', 'DonationManager'
        DOCTOR  = 'DOC' , 'Doctor'    
        PATIENT = 'PAT' , 'Patient'
        VOLUNTEE = 'VOL', 'Volunteer'
@@ -22,6 +22,16 @@ class Role(models.TextChoices):
    
 class User(AbstractUser):
     phone = models.CharField(max_length=20, blank=True, null=True)
+    email= models.EmailField(
+        max_length=150,
+        unique=True,
+        help_text=(
+            "Required. 150 characters or fewer."
+        ),
+        error_messages={
+            "unique": ("A user with that emaiL already exists."),
+        },
+    )
     profile_image = models.ImageField(
         null=True, blank=True, upload_to='profiles/', default='profiles/user-default.png')
     role = models.CharField(
@@ -45,7 +55,7 @@ class VolunteerStatus(models.TextChoices):
 
 
 class Volunteer(models.Model):
-    user_id= models.ForeignKey(User, on_delete=models.CASCADE, null=False, blank=False)
+    user_id= models.OneToOneField(User, on_delete=models.CASCADE, null=False, blank=False)
     id = models.AutoField(primary_key=True,unique=True,editable=False)
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
@@ -65,30 +75,33 @@ class Volunteer(models.Model):
             choices=VolunteerStatus.choices,
             default=VolunteerStatus.PENDING,
     )
+    patient_id = models.OneToOneField('services.Patient', on_delete=models.SET_NULL, null=True, blank=True , related_name= 'assigned_volunteer')
+
 
     def __str__(self):
         return f"{self.id} - {self.first_name} {self.last_name}"
 
 
-
-"""
-class Position(models.Model):
-    STAFF_POSITION =[
-
-    ]
-    models.CharField(max_length=100)
-
-    def __str__(self):
-        return self.name
-
-
-class Staff(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
-    position = models.ForeignKey(Position, on_delete=models.SET_NULL, null=True)
-    joining_date = models.DateField(blank=True, null=True)
+class Note(models.Model):
+    id = models.AutoField(primary_key=True,unique=True,editable=False)
+    patient_id = models.ForeignKey('services.Patient', on_delete=models.SET_NULL, null=True, blank=True )
+    volunteer_id = models.ForeignKey(Volunteer, on_delete=models.SET_NULL, null=True, blank=True)
+    content = models.CharField(max_length = 50000, blank=True , null = True)
+    creation_date= models.DateTimeField(default=timezone.now())
 
     def __str__(self):
-        return f"Staff: {self.user.username}"#
-    
+         return f"{self.id} - {self.patient_id} : {self.volunteer_id}"
 
-"""
+
+
+class WithdrawalRequest(models.Model):
+    id = models.AutoField(primary_key=True,unique=True,editable=False)
+    volunteer = models.OneToOneField(Volunteer, on_delete=models.CASCADE, related_name='withdrawal_request')
+    cause = models.TextField()
+    is_approved = models.BooleanField(null=True, blank=True)  # None = pending, True = approved, False = rejected
+    creation_date = models.DateTimeField(default=timezone.now())
+
+    def __str__(self):
+        return f"{self.id} -Withdrawal Request from {self.volunteer.first_name} {self.volunteer.last_name} - {self.creation_date}"
+
+

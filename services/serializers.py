@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import Patient , PatientStatus , PendingPatientStatus , Doctor , Appointment
 
 class PatientSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = Patient
         fields = [
@@ -26,6 +27,7 @@ class PatientSerializer(serializers.ModelSerializer):
             'date_of_blindness',
         
         ]
+
 
 class UpdatePatientSerializer(serializers.ModelSerializer):
     class Meta:
@@ -83,17 +85,21 @@ class DoctorSerializers(serializers.ModelSerializer):
 
      
 
+
 class AppointmentSerializer(serializers.ModelSerializer):
+    is_completed = serializers.SerializerMethodField()
+
     class Meta:
         model = Appointment
         fields = [
-            
             'patient_id',
             'doctor_id',
             'request_date',
             'appointment_date',
             'medical_report',
+            'is_completed',
         ]
         read_only_fields = ['id', 'request_date', 'approved_date', 'appointment_status']
 
-
+    def get_is_completed(self, obj):
+        return bool(obj.medical_report is not None and obj.medical_report.strip() != '')

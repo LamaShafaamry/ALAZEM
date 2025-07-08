@@ -25,9 +25,9 @@ class IsVolunteerRole(BasePermission):
         return hasattr(request.user, 'role') and request.user.role == 'VOL'
 
 
-class IsDonationManagerRole(BasePermission):
-    def has_permission(self, request, view):
-        return hasattr(request.user, 'role') and request.user.role == 'DONATIONMANAGER'
+# class IsDonationManagerRole(BasePermission):
+#     def has_permission(self, request, view):
+#         return hasattr(request.user, 'role') and request.user.role == 'DONATIONMANAGER'
 
 
 class IsAdminManagerRole(BasePermission):

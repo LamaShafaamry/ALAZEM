@@ -1,4 +1,5 @@
-from .models import Patient , PatientStatus , PendingPatientStatus , Doctor , Appointment ,AppointmentStatus, RegistrationPatientStatus
+from ALAZEM import settings
+from .models import DeathPatientStatus, Patient , PatientStatus , PendingPatientStatus , Doctor , Appointment ,AppointmentStatus, RegistrationPatientStatus, TransitionPatientStatus
 from django.utils import timezone
 
 from rest_framework import status
@@ -11,29 +12,32 @@ from users.models import User , Role
 from rest_framework.permissions import IsAuthenticated 
 from rest_framework.views import APIView
 from ALAZEM.midlware.role_protection import IsDoctorRole , IsAdminManagerRole , IsPatientRole
+from django.core.mail import send_mail
+
 
 
 @api_view(['POST'])
 def create_patient(request):
-    # user_data = request.data.get('user')
-    # if not user_data:
-    #     return Response({'error': 'User  data is required'}, status=status.HTTP_400_BAD_REQUEST)
-    # Create the user
     patient_role = Role.PATIENT   
 
     if patient_role is None:
         return Response("{'error' : 'You do not have permission to access this resource.'}, status=status.HTTP_403_FORBIDDEN)} {patient_role}")
 
+    if User.objects.filter(email=request.data.get('email')).exists():
+        return Response("{'error' : 'A user with this email already exists.'}") 
+    
 
 
     user = User.objects.create_user(
-        username=request.data.get('username'),
+        username=request.data.get('email'),
         password=request.data.get('password'),
-        email=request.data.get('email', ''),  # Optional email field
+        email=request.data.get('email'),
         first_name= request.data.get("first_name"),
         last_name= request.data.get("last_name"),
         phone = request.data.get("phone"),
-        role = patient_role
+        role = patient_role,
+        is_active = False
+
     )
 
 
@@ -154,9 +158,13 @@ def create_doctor(request):
     if doctor_role is None:
         return Response({'error': 'You do not have permission to access this resource.'}, status=status.HTTP_403_FORBIDDEN)
 
+    if User.objects.filter(email=request.data.get('email')).exists():
+        return Response("{'error' : 'A user with this email already exists.'}") 
+    
+
     # Create the user
     user = User.objects.create_user(
-        username=request.data.get('username'),
+        username=request.data.get('email'),
         password=request.data.get('password'),
         email=request.data.get('email', ''),  # Optional email field
         first_name=request.data.get("first_name"),
@@ -167,7 +175,7 @@ def create_doctor(request):
 
     # Prepare doctor data
     doctor_data = {
-        "first_name": request.data.get('first_name'),  # Corrected key
+        "first_name": request.data.get('first_name'),  
         "last_name": request.data.get('last_name'),
         "speciality": request.data.get('speciality'),
         "user_id": user.id,
@@ -189,11 +197,13 @@ def get_patients(request):
     patients_list = Patient.objects.all()
     name = request.query_params.get('name', None)
     status_filter = request.query_params.get('status_filter' , None)  # 'pending' or 'registered'
+    is_active = request.query_params.get('is_active' , None)
 
     if name:
         patients_list = patients_list.filter(first_name__icontains=name) | patients_list.filter(last_name__icontains=name)
     # serializer = PatientSerializer(patients_list, many=True)
     # return Response(serializer.data, status=status.HTTP_200_OK)
+
 
     if status_filter == 'pending':
         patients_list = patients_list.filter(
@@ -255,25 +265,51 @@ def get_users(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated , IsAdminManagerRole])
-def change_patient_status(request, pending_status_id):
-    try:
-        pending_status = PendingPatientStatus.objects.select_related('patientStatus').get(id=pending_status_id)
-    except PendingPatientStatus.DoesNotExist:
-        return Response({'error': 'Pending status not found.'}, status=status.HTTP_404_NOT_FOUND)
+def change_patient_status(request,patient_id):
+ 
+    patient_status = PatientStatus.objects.filter(patient_id__id = patient_id).first()
+    pendig_patient_status= patient_status.pending_statuses.first()
+    if pendig_patient_status is None:
+        return Response({'error': 'Pending Patient status not found.'}, status=status.HTTP_404_NOT_FOUND)
 
     action = request.data.get('action')  # 'approve' or 'reject'
 
     if action == 'approve':
         # Create RegistrationPatientStatus
         RegistrationPatientStatus.objects.create(
-            patientStatus=pending_status.patientStatus,
+            patientStatus=patient_status,
             date=timezone.now().date()
         )
-        pending_status.delete()
+
+        patient_status.patient_id.user_id.is_active =  True
+        patient_status.patient_id.user_id.save()
+        pendig_patient_status.delete()
+        return Response({'message': 'Patient approved and registered.'}, status=status.HTTP_200_OK)
+    
+    elif action == 'transition':
+        TransitionPatientStatus.objects.create(
+            patientStatus=patient_status,
+            date=timezone.now().date()
+        )
+
+        patient_status.patient_id.user_id.is_active =  False
+        patient_status.patient_id.user_id.save()
+        pendig_patient_status.delete()
+        return Response({'message': 'Patient approved and registered.'}, status=status.HTTP_200_OK)
+
+    elif action == 'death':
+        DeathPatientStatus.objects.create(
+            patientStatus=patient_status,
+            date=timezone.now().date()
+        )
+
+        patient_status.patient_id.user_id.is_active =  False
+        patient_status.patient_id.user_id.save()
+        pendig_patient_status.delete()
         return Response({'message': 'Patient approved and registered.'}, status=status.HTTP_200_OK)
 
     elif action == 'reject':
-        pending_status.delete()
+        pendig_patient_status.delete()
         return Response({'message': 'Patient application rejected.'}, status=status.HTTP_200_OK)
 
     else:
@@ -309,17 +345,111 @@ def create_appointment(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+
+
+
+
 @api_view(['POST'])
-@permission_classes([IsAuthenticated , IsDoctorRole])
-def approve_appointment(request, appointment_id):
+@permission_classes([IsAuthenticated, IsDoctorRole])
+def update_appointment_status(request, appointment_id):
     try:
         appointment = Appointment.objects.get(id=appointment_id)
     except Appointment.DoesNotExist:
         return Response({'error': 'Appointment not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    # Update the appointment status and approved date
-    appointment.appointment_status = AppointmentStatus.APPROVAL
-    appointment.approved_date = timezone.now()  # Set the current date as the approved date
+    action = request.data.get('action')
+
+    if action not in ['approve', 'reject']:
+        return Response({'error': 'Invalid action. Must be "approve" or "reject".'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if action == 'approve':
+        appointment.appointment_status = AppointmentStatus.APPROVAL
+        appointment.approved_date = timezone.now()
+        appointment.save()
+        return Response({'message': 'Appointment approved.', 'appointment_id': appointment.id}, status=status.HTTP_200_OK)
+    
+    else:  # reject
+        appointment.appointment_status = AppointmentStatus.REJECTED
+        appointment.save()
+
+        # manager_email = "manager@example.com"  # or fetch dynamically
+        # send_mail(
+        #     subject="Appointment Rejected",
+        #     message=f"Appointment {appointment.id} for patient {appointment.patient_id} has been rejected by the doctor.",
+        #     from_email=settings.DEFAULT_FROM_EMAIL,
+        #     recipient_list=[manager_email],
+        #     fail_silently=True,
+        # )
+
+        return Response({'message': 'Appointment rejected.', 'appointment_id': appointment.id}, status=status.HTTP_200_OK)
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsDoctorRole])
+def update_medical_report(request, appointment_id):
+    try:
+        appointment = Appointment.objects.get(id=appointment_id)
+    except Appointment.DoesNotExist:
+        return Response({'error': 'Appointment not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if appointment.appointment_status != AppointmentStatus.APPROVAL:
+        return Response({'error': 'Medical report can only be updated for approved appointments.'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+    medical_report = request.data.get('medical_report')
+    if medical_report is None:
+        return Response({'error': 'Medical report is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    appointment.medical_report = medical_report
     appointment.save()
 
-    return Response({'message': 'Appointment approved successfully!', 'appointment_id': appointment.id}, status=status.HTTP_200_OK)
+    return Response({'message': 'Medical report updated.', 'appointment_id': appointment.id}, status=status.HTTP_200_OK)
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsDoctorRole])
+def doctor_appointments(request):
+    doctor = request.user.doctor  # Assumes the logged-in user is linked to a Doctor model
+    appointments = Appointment.objects.filter(doctor_id=doctor).order_by('-appointment_date')
+
+    serializer = AppointmentSerializer(appointments, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsPatientRole])
+def patient_approved_appointments(request):
+    try:
+        patient = request.user.patient  # Assumes User has OneToOne with Patient
+    except AttributeError:
+        return Response({'error': 'User is not linked to a patient.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Start with approved appointments
+    approved_appointments = Appointment.objects.filter(
+        patient_id=patient,
+        appointment_status=AppointmentStatus.APPROVAL
+    ).order_by('-appointment_date')
+
+    # Optional filter for completion status
+    completed_filter = request.query_params.get('completed', None)
+
+    if completed_filter is not None:
+        if completed_filter.lower() == 'true':
+            approved_appointments = approved_appointments.exclude(medical_report__isnull=True).exclude(medical_report__exact="")
+        elif completed_filter.lower() == 'false':
+            approved_appointments = approved_appointments.filter(medical_report__isnull=True) | approved_appointments.filter(medical_report__exact="")
+
+    serialized = AppointmentSerializer(approved_appointments, many=True)
+    return Response(serialized.data, status=status.HTTP_200_OK)
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminManagerRole])
+def get_all_appointments(request):
+    appointments = Appointment.objects.all().order_by('-appointment_date')
+
+    serializer = AppointmentSerializer(appointments, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
