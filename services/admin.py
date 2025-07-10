@@ -10,9 +10,9 @@ admin.site.register(Appointment)
 admin.site.register(DeathPatientStatus)
 admin.site.register(TransitionPatientStatus)
 
+admin.site.register(Patient)
 
-
-@admin.register(Patient)
-class PatientAdmin(admin.ModelAdmin):
-    list_display = ('id', 'first_name', 'last_name')
-    search_fields = ('first_name', 'last_name')
+# @admin.register(Patient)
+# class PatientAdmin(admin.ModelAdmin):
+#     list_display = ('id', 'first_name', 'last_name')
+#     # search_fields = ('first_name', 'last_name')

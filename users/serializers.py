@@ -14,8 +14,37 @@ class UserSerializer(serializers.ModelSerializer):
            'role',
         ]
 
+class ForgetPasswordRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+# class VerifyCodeSerializer(serializers.Serializer):
+#     email = serializers.EmailField()
+#     varification_code = serializers.CharField(max_length=10)
+
+class ResetNewPasswordSerializer(serializers.ModelSerializer):
+    model = User
+    fields = [
+        'email',
+        'varification_code',
+        'new_password'
+    ]
+    # email = serializers.EmailField()
+    # varification_code = serializers.CharField(max_length=10)
+    # new_password = serializers.CharField(min_length=8)
+
+class VarifyAccountSerializer(serializers.ModelSerializer):
+    model = User
+    fields = [
+        'email',
+        'varification_code',
+    ]
 
 class Volunteerserializers(serializers.ModelSerializer):
+    email = serializers.EmailField(source='user_id.email', read_only=True)
+    first_name = serializers.CharField(source='user_id.first_name', read_only=True)
+    last_name = serializers.CharField(source='user_id.last_name', read_only=True)
+    phone = serializers.CharField(source='user_id.phone', read_only=True)  # If 'phone' is a field on your User model
+
     class Meta:
         model = Volunteer
         fields = [
@@ -23,6 +52,8 @@ class Volunteerserializers(serializers.ModelSerializer):
             'user_id',
             'first_name',
             'last_name',
+            'email',
+            'phone',
             'father_name',
             'mother_name',
             'date_of_birth',
@@ -86,10 +117,10 @@ class NoteSerializer(serializers.ModelSerializer):
         ]
 
     def get_volunteer_name(self, obj):
-        return f"{obj.volunteer_id.first_name} {obj.volunteer_id.last_name}" if obj.volunteer_id else None
+        return f"{obj.volunteer_id.user_id.first_name} {obj.volunteer_id.user_id.last_name}" if obj.volunteer_id else None
 
     def get_patient_name(self, obj):
-        return f"{obj.patient_id.first_name} {obj.patient_id.last_name}" if obj.patient_id else None
+        return f"{obj.patient_id.user_id.first_name} {obj.patient_id.user_id.last_name}" if obj.patient_id else None
     
 
 
