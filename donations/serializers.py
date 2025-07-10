@@ -20,6 +20,7 @@ class AssociationDonationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Donation
         fields = [
+            'email',
             'donation_type',
             'donation_status',
             'amount',
@@ -33,6 +34,7 @@ class DonationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Donation
         fields = [
+            'email',
             'donation_type',
             'donation_status',
             'amount',

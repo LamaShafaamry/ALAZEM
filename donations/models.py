@@ -16,6 +16,7 @@ class DonationType(models.TextChoices):
 
 class Donation(models.Model):
    id = models.AutoField(primary_key=True,unique=True,editable=False)
+   email = models.EmailField(max_length=150 , null=False , blank=False)
    donation_type = models.CharField(
       max_length=3,
       choices=DonationType.choices,

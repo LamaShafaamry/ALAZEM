@@ -1,10 +1,13 @@
+from datetime import timezone
+import random
 from django.contrib.auth import authenticate, login
 from django.contrib.auth.models import User as AuthUser 
 from django.http import JsonResponse
 from ALAZEM.midlware.role_protection import IsAdminManagerRole, IsManagerRole , IsVolunteerRole
-from services.models import Patient, RegistrationPatientStatus
+from services.models import Patient, PendingPatientStatus, RegistrationPatientStatus
+from services.serializers import PatientStatusSerializers
 from users.models import Note, Role ,User , Volunteer, VolunteerStatus, WithdrawalRequest
-from .serializers import NoteSerializer, Volunteerserializers , VolunteerAssignmentSerializer, WithdrawalRequestSerializer, WithdrawalRequestSerializerForManager
+from .serializers import ForgetPasswordRequestSerializer, NoteSerializer, UserSerializer, Volunteerserializers , VolunteerAssignmentSerializer, WithdrawalRequestSerializer, WithdrawalRequestSerializerForManager
 
 import json
 from rest_framework import status
@@ -17,6 +20,10 @@ from django.shortcuts import get_object_or_404
 
 
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.core.mail import send_mail
 
 
 class LoginView(APIView):
@@ -40,12 +47,73 @@ class LoginView(APIView):
 
 
 
+class ForgetPasswordView(APIView):
+    def post(self, request):
+        serializer = ForgetPasswordRequestSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            try:
+                user = User.objects.get(email=email)
+                varification_code = f"{random.randint(100000, 999999)}"
+                user.varification_code = varification_code
+                user.save()
+
+                # Send the code using SMTP
+                # send_mail(
+                #     subject="Your Password Reset Verification Code",
+                #     message=f"Hello {user.username},\n\nYour password reset verification code is: {varification_code}\n\nIt expires in 10 minutes.",
+                #     from_email="alazem.noreply@gmail.com", 
+                #     recipient_list=[email],
+                #     fail_silently=False,
+                # )
+
+                return Response({"detail": "Verification code sent to your email."})
+            except User.DoesNotExist:
+                return Response({"detail": "User with this email does not exist."}, status=404)
+        return Response(serializer.errors, status=400)
+
+
+# class VerifyResetCodeView(APIView):
+#     def post(self, request):
+#         user = User.objects.get(email=email)
+#         serializer = VerifyCodeSerializer(data=request.data)
+#         if serializer.is_valid():
+#             email = serializer.validated_data['email']
+#             varification_code = serializer.validated_data['varification_code']
+#             try:
+                
+#                 reset_code = user.filter(varification_code =varification_code)
+#                 if reset_code and reset_code.is_valid():
+#                     return Response({"detail": "Code is valid."})
+#                 return Response({"detail": "Invalid or expired code."}, status=400)
+#             except User.DoesNotExist:
+#                 return Response({"detail": "User does not exist."}, status=404)
+#         return Response(serializer.errors, status=400)
+
+
+class ResetNewPasswordView(APIView):
+    def post(self, request):
+        
+        email = request.data.get('email')
+        varification_code = request.data.get('varification_code')
+        new_password = request.data.get('new_password')
+        try:
+            user = User.objects.get(email=email)
+            if str(user.varification_code).strip() == str(varification_code).strip():
+                user.set_password(new_password)
+                user.save()
+                #reset_code.delete()  # Optional: remove the code after use
+                return Response({"detail": "Password has been reset."})
+            else:
+                return Response({"detail": "Invalid or expired code."}, status=400)
+        except User.DoesNotExist:
+            return Response({"detail": "User does not exist."}, status=404)
+    
+
+
+
 @api_view(['POST'])
 def create_Volunteer(request):
-    # user_data = request.data.get('user')
-    # if not user_data:
-    #     return Response({'error': 'User  data is required'}, status=status.HTTP_400_BAD_REQUEST)
-    # Create the user
     volunteer_role = Role.VOLUNTEE  
 
     if volunteer_role is None:
@@ -64,7 +132,8 @@ def create_Volunteer(request):
         last_name= request.data.get("last_name"),
         phone = request.data.get("phone"),
         role = volunteer_role,
-        is_active = False
+        is_active = False,
+        is_email_varification = False
     )
 
 
@@ -88,8 +157,20 @@ def create_Volunteer(request):
     # Deserialize the incoming JSON data
     serializer = Volunteerserializers(data=volunteer_data)
     if serializer.is_valid():
-        
+        user = User.objects.get(email=user.email)
+        varification_code = f"{random.randint(100000, 999999)}"
+        user.varification_code = varification_code
+        user.save()
         volunteer = serializer.save()  # Save the patient using the serializer
+        
+        # send_mail(
+        #             subject="Your Password Reset Verification Code",
+        #             message=f"Hello {user.username},\n\nYour password reset verification code is: {varification_code}\n\nIt expires in 10 minutes.",
+        #             from_email="alazem.noreply@gmail.com", 
+        #             recipient_list=[user.email],
+        #             fail_silently=False,
+        #         )
+
         return Response({'message': 'Volunteer created successfully!', 'volunteer_id': str(volunteer.id)}, status=status.HTTP_201_CREATED)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -131,11 +212,11 @@ def update_volunteer_profile(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated , IsAdminManagerRole])
 def get_volunteer(request):
-    volunteer_list = Volunteer.objects.all()
+    volunteer_list = Volunteer.objects.filter(user_id__is_email_varification = True)
     status_filter =request.query_params.get('status_filter', None)
     name = request.query_params.get('name', None)
     job = request.query_params.get('job', None)
-    print (VolunteerStatus.PENDING)
+    # print (VolunteerStatus.PENDING)
     if name:
         volunteer_list = volunteer_list.filter(first_name__icontains=name) | volunteer_list.filter(last_name__icontains=name) 
     if job:
@@ -147,6 +228,38 @@ def get_volunteer(request):
     return Response(serializer.data, status=status.HTTP_200_OK)
 
   
+class VarifyAccount(APIView):
+    def post(self, request):
+        
+        email = request.data.get('email')
+        varification_code = request.data.get('varification_code')
+        try:
+            user = User.objects.get(email=email)
+            if str(user.varification_code).strip() == str(varification_code).strip():
+                user.is_email_varification = True
+                user.save()
+                print(user.role)
+                if user.role == Role.PATIENT:
+                    PatientStatus_data = {
+                        "patient_id" :user.patient_user.id
+                    }
+                    if  user.patient_user.patient_status.first() is None:
+
+                        PatientStatusSerializer = PatientStatusSerializers(data=PatientStatus_data)
+                        if PatientStatusSerializer.is_valid():
+                            patientStatus = PatientStatusSerializer.save()
+
+                        if  user.patient_user.patient_status.first().pending_statuses.first() is None:
+                            PendingPatientStatus.objects.create(patientStatus = patientStatus , date = timezone.now())
+            
+                #reset_code.delete()  # Optional: remove the code after use
+                return Response({"detail": "Email Varified Successfuly."})
+            else:
+                return Response({"detail": "Invalid or expired code."}, status=400)
+        except User.DoesNotExist:
+            return Response({"detail": "User does not exist."}, status=404)
+    
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsVolunteerRole])
 def get_volunteer_profile(request):
@@ -268,12 +381,25 @@ def add_note(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated , IsAdminManagerRole]) 
 def list_all_notes(request):
-    notes = Note.objects.select_related('patient_id', 'volunteer_id').all()
+    user = request.user
+
+    # notes = Note.objects.select_related('patient_id', 'volunteer_id').all()
+    notes = Note.objects.filter(
+        patient_id__user_id__is_active=True,
+        volunteer_id__user_id__is_active=True
+)
     patient_id = request.query_params.get('patient_id', None)
 
-    if patient_id:
-        notes = notes.filter(patient_id__id=patient_id)
+    if user.role == Role.PATIENT:
+        notes = notes.filter(patient_id__id=user.patient_user.id)
 
+    elif user.role == Role.VOLUNTEE:
+         notes = notes.filter(volunnteer_id__id=user.volunteer_user.id)
+
+    else :
+        if patient_id:
+            notes = notes.filter(patient_id__id=patient_id)
+    
     serializer = NoteSerializer(notes, many=True)
     return Response(serializer.data)
 
@@ -365,32 +491,38 @@ def handle_withdrawal_request(request, request_id):
 
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated , IsManagerRole])
+def get_manager_profile(request):
+    serializer = UserSerializer(request.user)
+    return Response(serializer.data)
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated , IsManagerRole])
+def update_manager_profile(request):
+    user = request.user
 
+    # if user.role != Role.VOLUNTEE:
+    #     return Response({'error': 'Only the Owner profile can update their profile.'}, status=status.HTTP_403_FORBIDDEN)
 
+    # try:
+    #     volunteer = Volunteer.objects.get(user_id=user)
+    # except Volunteer.DoesNotExist:
+    #     return Response({'error': 'Volunteer profile not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+    # Update User fields
+    user_fields = ['email' , 'first_name', 'last_name' , 'phone']
+    for field in user_fields:
+        if field in request.data:
+            setattr(user, field, request.data[field])
+    user.save()
 
-# @api_view(['GET','POST'])
-# @permission_classes([IsAuthenticated])
-# def manage_own_profile(request):
-#     user = request.user
+    # Update Patient fields
+    serializer = UserSerializer(user, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response({'message': 'Your profile updated successfully.', 'data': serializer.data},
+                        status=status.HTTP_200_OK)
 
-#     if request.method in ['PUT', 'PATCH']:
-#         # Update user fields
-#         user_fields = ['username', 'email', 'first_name', 'last_name', 'phone']
-#         for field in user_fields:
-#             if field in request.data:
-#                 setattr(user, field, request.data[field])
-#         user.save()
-#         return Response({'message': 'Profile updated successfully.'}, status=status.HTTP_200_OK)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-#     elif request.method == 'DELETE':
-#         user.delete()
-#         return Response({'message': 'Your account has been deleted.'}, status=status.HTTP_204_NO_CONTENT)
-
-#     elif request.method == 'GET':
-#         from .serializers import UserSerializer  # Replace with actual path
-#         serializer = UserSerializer(user)
-#         return Response(serializer.data)
-
-#     return Response({'error': 'Method not allowed.'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)

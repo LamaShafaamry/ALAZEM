@@ -1,7 +1,14 @@
 from rest_framework import serializers
 from .models import Patient , PatientStatus , PendingPatientStatus , Doctor , Appointment
 
+
+
+
 class PatientSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(source='user_id.email', read_only=True)
+    first_name = serializers.CharField(source='user_id.first_name', read_only=True)
+    last_name = serializers.CharField(source='user_id.last_name', read_only=True)
+    phone = serializers.CharField(source='user_id.phone', read_only=True)  # If 'phone' is a field on your User model
 
     class Meta:
         model = Patient
@@ -10,6 +17,8 @@ class PatientSerializer(serializers.ModelSerializer):
             'user_id',
             'first_name',
             'last_name',
+            'email',
+            'phone',
             'father_name',
             'mother_name',
             'date_of_birth',
@@ -73,6 +82,11 @@ class PendingPatientStatusSerializers(serializers.ModelSerializer):
       
 
 class DoctorSerializers(serializers.ModelSerializer):
+    email = serializers.EmailField(source='user_id.email', read_only=True)
+    first_name = serializers.CharField(source='user_id.first_name', read_only=True)
+    last_name = serializers.CharField(source='user_id.last_name', read_only=True)
+    phone = serializers.CharField(source='user_id.phone', read_only=True)  # If 'phone' is a field on your User model
+
     class Meta:
         model= Doctor
         fields = [
@@ -80,6 +94,8 @@ class DoctorSerializers(serializers.ModelSerializer):
             'user_id',
             'first_name',
             'last_name',
+            'email',
+            'phone',
             'speciality',
         ]
 

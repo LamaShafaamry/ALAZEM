@@ -1,3 +1,4 @@
+import random
 from ALAZEM import settings
 from .models import DeathPatientStatus, Patient , PatientStatus , PendingPatientStatus , Doctor , Appointment ,AppointmentStatus, RegistrationPatientStatus, TransitionPatientStatus
 from django.utils import timezone
@@ -36,7 +37,9 @@ def create_patient(request):
         last_name= request.data.get("last_name"),
         phone = request.data.get("phone"),
         role = patient_role,
-        is_active = False
+        is_active = False,
+        is_email_varification = False
+
 
     )
 
@@ -65,27 +68,49 @@ def create_patient(request):
     # Deserialize the incoming JSON data
     serializer = PatientSerializer(data=patient_data)
     if serializer.is_valid():
+
+        user = User.objects.get(email=user.email)
+        varification_code = f"{random.randint(100000, 999999)}"
+        user.varification_code = varification_code
+        user.save()
+
         patient = serializer.save() 
 
-        PatientStatus_data = {
-            "patient_id" : patient.id
-        }
-
-        PatientStatusSerializer = PatientStatusSerializers(data=PatientStatus_data)
-        if PatientStatusSerializer.is_valid():
-            patientStatus = PatientStatusSerializer.save()
-
-            PendingPatientStatus_data = {
-            "patientStatus_id" : patientStatus.id,
+        if user.is_email_varification == True:
+            PatientStatus_data = {
+                "patient_id" : patient.id
             }
+            PatientStatusSerializer = PatientStatusSerializers(data=PatientStatus_data)
+            if PatientStatusSerializer.is_valid():
+                patientStatus = PatientStatusSerializer.save()
 
-            PendingPatientStatusserializer = PendingPatientStatusSerializers(data=PendingPatientStatus_data)
-            PendingPatientStatus.objects.create(patientStatus = patientStatus , date = timezone.now())
+                PendingPatientStatus_data = {
+                "patientStatus_id" : patientStatus.id,
+                }
+                
+                PendingPatientStatusserializer = PendingPatientStatusSerializers(data=PendingPatientStatus_data)
+                PendingPatientStatus.objects.create(patientStatus = patientStatus , date = timezone.now())
 
-        return Response({'message': 'Patient created successfully!', 'patient_id': str(patient.id)}, status=status.HTTP_201_CREATED)
+            return Response({'message': 'Patient created successfully!', 'patient_id': str(patient.id)}, status=status.HTTP_201_CREATED)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsPatientRole])
+def get_patient_profile(request):
+
+    try:
+        patient = Patient.objects.select_related('user_id').get(
+            user_id=request.user,
+            user_id__is_active=True
+        )
+    except Patient.DoesNotExist:
+        return Response({"error": "Volunteer is either inactive or not registered."}, status=403)
+
+    serializer = PatientSerializer(patient)
+    return Response(serializer.data)
 
 
 @api_view(['POST'])
@@ -189,15 +214,29 @@ def create_doctor(request):
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsDoctorRole])
+def get_doctor_profile(request):
+
+    try:
+        doctor = Doctor.objects.select_related('user_id').get(
+            user_id=request.user,
+            user_id__is_active=True
+        )
+    except Doctor.DoesNotExist:
+        return Response({"error": "Doctor is either inactive or not registered."}, status=403)
+
+    serializer = DoctorSerializers(doctor)
+    return Response(serializer.data)
+
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated , IsAdminManagerRole])
 def get_patients(request):
-    patients_list = Patient.objects.all()
+    patients_list = Patient.objects.filter(user_id__is_email_varification = True)
     name = request.query_params.get('name', None)
-    status_filter = request.query_params.get('status_filter' , None)  # 'pending' or 'registered'
-    is_active = request.query_params.get('is_active' , None)
+    status_filter = request.query_params.get('status_filter' , None)  
 
     if name:
         patients_list = patients_list.filter(first_name__icontains=name) | patients_list.filter(last_name__icontains=name)
@@ -207,19 +246,19 @@ def get_patients(request):
 
     if status_filter == 'pending':
         patients_list = patients_list.filter(
-            patientstatus__pending_statuses__isnull=False
+            patient_status__pending_statuses__isnull=False
         ).distinct()
     elif status_filter == 'registered':
         patients_list = patients_list.filter(
-            patientstatus__registration_statuses__isnull=False
+            patient_status__registration_statuses__isnull=False
         ).distinct()
     elif status_filter == 'death':
         patients_list = patients_list.filter(
-            patientstatus__death_statuses__isnull=False
+            patient_status__death_statuses__isnull=False
         ).distinct()
     elif status_filter == 'transition':
         patients_list = patients_list.filter(
-            patientstatus__transition_statuses__isnull=False
+            patient_status__transition_statuses__isnull=False
         ).distinct()
           
     else :

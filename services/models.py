@@ -6,10 +6,8 @@ from django.utils import timezone
 
 
 class Patient(models.Model):
-    user_id= models.OneToOneField(User, on_delete=models.CASCADE, null=False, blank=False)
+    user_id= models.OneToOneField(User, on_delete=models.CASCADE, null=False, blank=False , related_name='patient_user')
     id =models.AutoField(primary_key=True,unique=True,editable=False)
-    first_name = models.CharField(max_length=150)
-    last_name = models.CharField(max_length=150)
     father_name = models.CharField(max_length=150, blank=True, null=True)
     mother_name = models.CharField(max_length=150, blank=True, null=True)
     date_of_birth = models.DateField(blank=True, null=True)
@@ -29,12 +27,12 @@ class Patient(models.Model):
 
 
     def __str__(self):
-        return f"{self.id} - {self.first_name} {self.last_name}"
+        return f"{self.id} - {self.user_id.first_name} {self.user_id.last_name}"
 
 
 class PatientStatus(models.Model):
     id = models.AutoField(unique=True,primary_key=True , editable=False)
-    patient_id =  models.ForeignKey(Patient, on_delete=models.CASCADE, null=False, blank=False)
+    patient_id =  models.ForeignKey(Patient, on_delete=models.CASCADE, null=False, blank=False , related_name='patient_status')
 
     def __str__(self):
         return f"{self.patient_id.first_name} {self.patient_id.last_name}"
@@ -80,12 +78,10 @@ class TransitionPatientStatus(models.Model):
 class Doctor(models.Model):
     user_id= models.OneToOneField(User, on_delete=models.CASCADE, null=False, blank=False)
     id =models.AutoField(primary_key=True,unique=True,editable=False)
-    first_name = models.CharField(max_length=150)
-    last_name = models.CharField(max_length=150)
     speciality =models.CharField(max_length=100)
 
     def __str__(self):
-        return f"{self.id} - {self.first_name} {self.last_name}"
+        return f"{self.id} - {self.user_id.first_name} {self.user_id.last_name}"
     
 
 class AppointmentStatus(models.TextChoices):
