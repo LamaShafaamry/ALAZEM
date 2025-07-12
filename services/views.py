@@ -1,5 +1,7 @@
 import random
 from ALAZEM import settings
+from donations.models import DonationStatus, PatientDonation
+from donations.serializers import PatientDonationSerializer
 from .models import DeathPatientStatus, Patient , PatientStatus , PendingPatientStatus , Doctor , Appointment ,AppointmentStatus, RegistrationPatientStatus, TransitionPatientStatus
 from django.utils import timezone
 
@@ -74,24 +76,9 @@ def create_patient(request):
         user.varification_code = varification_code
         user.save()
 
-        patient = serializer.save() 
+        serializer.save() 
 
-        if user.is_email_varification == True:
-            PatientStatus_data = {
-                "patient_id" : patient.id
-            }
-            PatientStatusSerializer = PatientStatusSerializers(data=PatientStatus_data)
-            if PatientStatusSerializer.is_valid():
-                patientStatus = PatientStatusSerializer.save()
-
-                PendingPatientStatus_data = {
-                "patientStatus_id" : patientStatus.id,
-                }
-                
-                PendingPatientStatusserializer = PendingPatientStatusSerializers(data=PendingPatientStatus_data)
-                PendingPatientStatus.objects.create(patientStatus = patientStatus , date = timezone.now())
-
-            return Response({'message': 'Patient created successfully!', 'patient_id': str(patient.id)}, status=status.HTTP_201_CREATED)
+        return Response({'message': 'Patient created successfully!'}, status=status.HTTP_201_CREATED)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -107,7 +94,7 @@ def get_patient_profile(request):
             user_id__is_active=True
         )
     except Patient.DoesNotExist:
-        return Response({"error": "Volunteer is either inactive or not registered."}, status=403)
+        return Response({"error": "Patient is either inactive or not registered."}, status=403)
 
     serializer = PatientSerializer(patient)
     return Response(serializer.data)
@@ -492,3 +479,31 @@ def get_all_appointments(request):
 
     serializer = AppointmentSerializer(appointments, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsPatientRole])
+def get_my_donations(request):
+    try:
+        patient = request.user.patient_user  # Assumes User has OneToOne with Patient
+    except AttributeError:
+        return Response({'error': 'User is not linked to a patient.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Start with approved appointments
+    completed_donation = PatientDonation.objects.filter(
+        patient_id=patient,
+        donation_id__donation_status=DonationStatus.COMPLETED
+    ).order_by('-donation_id__creation_date')
+
+    # Optional filter for completion status
+    # completed_filter = request.query_params.get('completed', None)
+
+    # if completed_filter is not None:
+    #     if completed_filter.lower() == 'true':
+    #         approved_appointments = approved_appointments.exclude(medical_report__isnull=True).exclude(medical_report__exact="")
+    #     elif completed_filter.lower() == 'false':
+    #         approved_appointments = approved_appointments.filter(medical_report__isnull=True) | approved_appointments.filter(medical_report__exact="")
+
+    serialized = PatientDonationSerializer(completed_donation, many=True)
+    return Response(serialized.data, status=status.HTTP_200_OK)

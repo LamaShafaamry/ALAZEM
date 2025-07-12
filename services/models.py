@@ -35,7 +35,7 @@ class PatientStatus(models.Model):
     patient_id =  models.ForeignKey(Patient, on_delete=models.CASCADE, null=False, blank=False , related_name='patient_status')
 
     def __str__(self):
-        return f"{self.patient_id.first_name} {self.patient_id.last_name}"
+        return f"{self.patient_id.user_id.first_name} {self.patient_id.user_id.last_name}"
 
 class PendingPatientStatus(models.Model):
     id = models.AutoField(primary_key=True,unique=True,editable=False)
@@ -43,7 +43,7 @@ class PendingPatientStatus(models.Model):
     date = models.DateTimeField(default=timezone.now())
   
     def __str__(self):
-        return f"{self.patientStatus.id} - {self.patientStatus.patient_id.first_name} {self.patientStatus.patient_id.last_name}"
+        return f"{self.patientStatus.id} - {self.patientStatus.patient_id.user_id.first_name} {self.patientStatus.patient_id.user_id.last_name}"
 
 class RegistrationPatientStatus(models.Model):
     id = models.AutoField(primary_key=True,unique=True,editable=False)
@@ -51,7 +51,7 @@ class RegistrationPatientStatus(models.Model):
     date = models.DateTimeField(default=timezone.now())
 
     def __str__(self):
-        return f"{self.id} - {self.patientStatus.patient_id.first_name} {self.patientStatus.patient_id.last_name}"
+        return f"{self.id} - {self.patientStatus.patient_id.user_id.first_name} {self.patientStatus.patient_id.user_id.last_name}"
 
 class DeathPatientStatus(models.Model):
     id = models.AutoField(primary_key=True,unique=True,editable=False)
@@ -60,7 +60,7 @@ class DeathPatientStatus(models.Model):
     cause_of_death = models.TextField(max_length=200, null=True , blank=True)
 
     def __str__(self):
-        return f"{self.patientStatus.patient_id.first_name} {self.patientStatus.patient_id.last_name}"
+        return f"{self.patientStatus.patient_id.user_id.first_name} {self.patientStatus.patient_id.user_id.last_name}"
 
 class TransitionPatientStatus(models.Model):
     id = models.AutoField(primary_key=True,unique=True,editable=False)
@@ -69,7 +69,7 @@ class TransitionPatientStatus(models.Model):
     new_association = models.TextField(max_length=200 , null=True , blank= True)
 
     def __str__(self):
-        return f"{self.patientStatus.patient_id.first_name} {self.patientStatus.patient_id.last_name}"
+        return f"{self.patientStatus.patient_id.user_id.first_name} {self.patientStatus.patient_id.user_id.last_name}"
 
     
   
@@ -106,4 +106,4 @@ class Appointment(models.Model):
 
     def __str__(self):
        # return f"Appointment with {self.doctor_id} for {self.patient_id} at {self.appointment_date}"
-        return f"Appointment with {self.patient_id.first_name} {self.patient_id.last_name} for {self.doctor_id.first_name} {self.doctor_id.last_name} at {self.appointment_date}"
+        return f"Appointment with {self.patient_id.user_id.first_name} {self.patient_id.user_id.last_name} for {self.doctor_id.user_id.first_name} {self.doctor_id.user_id.last_name} at {self.appointment_date}"
