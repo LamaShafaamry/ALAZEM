@@ -1,16 +1,20 @@
 
 from django.shortcuts import get_object_or_404
-from .models import Donation, DonationStatus , DonationType
+from .models import Donation, DonationStatus , DonationType, PatientDonation
 from services.models import Patient
 from rest_framework.decorators import api_view , permission_classes
 from rest_framework.response import Response
-from .serializers import  DonationSerializer, PatientDonationSerializer , AssociationDonationSerializer 
+from .serializers import  DonationSerializer, PatientDonationSerializer , AssociationDonationSerializer , varifySelectedPatientSerializeer
 from rest_framework import status
 from django.utils import timezone
 from django.db import transaction
 from rest_framework.permissions import IsAuthenticated 
 from ALAZEM.midlware.role_protection import IsAdminManagerRole
 from rest_framework import status
+from django.core.mail import send_mail
+
+from donations import models
+
 
 
 @api_view(['POST'])
@@ -32,7 +36,7 @@ def create_donations(request):
             "amount": request.data.get("amount"),
             "creation_date": timezone.now()
         }
-        serializer = AssociationDonationSerializer(data=donation_data)
+        serializer = DonationSerializer(data=donation_data)
         if serializer.is_valid():
                 donation = serializer.save()
                 return Response({'message': 'Donation created successfully!', 'donation_id': str(donation.id)}, status=status.HTTP_201_CREATED)
@@ -51,33 +55,48 @@ def create_donations(request):
         with transaction.atomic():
         # Validate all entries first without saving to avoid partial saves
             patients_to_donate = []
-            total_amount =0
+            # total_amount =0
             for entry in donations_input:
-                first_name = entry.get('first_name')
-                last_name = entry.get('last_name')
-                father_name = entry.get('father_name')
+                id = entry.get('id')
                 amount = entry.get('amount')
 
                 # Validate required fields
-                if not all([first_name, last_name, father_name, amount]):
-                    return Response({'error': 'All fields (first_name, last_name, father_name, amount) are required for each donation.'},
+                if not all([id, amount]):
+                    return Response({'error': 'All fields (id, amount) are required for each donation.'},
                                     status=status.HTTP_400_BAD_REQUEST)
 
                 # Find the patient
                 try:
-                    patient = Patient.objects.get(first_name=first_name, last_name=last_name, father_name=father_name)
+                    patient_id = Patient.objects.get(
+                       id = id
+                        )
+                # except Patient.DoesNotExist:
+                #     return Response({'error': f'Patient {id} not found.'}, status=400)
+                # except Patient.MultipleObjectsReturned:
+                #     return Response({'error': f'Multiple patients matched {first_name} {last_name}. Refine your input.'}, status=400)
+
+                # if not patient_id:
+                #     return Response({'error': 'patient_id is required for each donation entry.'}, status=400)
+
+                # try:
+                    patient = Patient.objects.get(id=patient_id.id)
                 except Patient.DoesNotExist:
-                    return Response({'error': f'{first_name} {last_name} Patient not found'},
-                                    status=status.HTTP_400_BAD_REQUEST)
+                    return Response({'error': f'Patient with ID {patient_id} not found.'}, status=400)
+
+                # try:
+                #     patient = Patient.objects.get('user_id__id')
+                # except Patient.DoesNotExist:
+                #     return Response({'error': f'{first_name} {last_name} Patient not found'},
+                #                     status=status.HTTP_400_BAD_REQUEST)
 
                 # Validate amount can be converted to float
                 try:
                     amount_val = float(amount)
                     if amount_val <50:
-                        return Response({'error': f'Invalid amount for patient {first_name} {last_name}. Must be 50 at least.'},
+                        return Response({'error': f'Invalid amount for patient {id}. Must be 50 at least.'},
                                         status=status.HTTP_400_BAD_REQUEST)
                 except (ValueError, TypeError):
-                    return Response({'error': f'Invalid amount format for patient {first_name} {last_name}.'},
+                    return Response({'error': f'Invalid amount format for patient {id}.'},
                                     status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -90,10 +109,12 @@ def create_donations(request):
 
             # All input validated, now create Donation once and PatientDonation entries
             donation = Donation.objects.create(
+                email = request.data.get('email'),
                 donation_type = donation_type,
                 amount= total_amount,  # will update later
                 creation_date=timezone.now()
             )
+            
             
             for item in patients_to_donate:
                 pd_data = {
@@ -123,7 +144,21 @@ def create_donations(request):
     }, status=status.HTTP_201_CREATED)
 
 
+@api_view(['POST'])
+def varifySelectedPatient(request):
+    try:
+        patient_id = Patient.objects.get(
+                            user_id__first_name = request.data.get('first_name') ,
+                            user_id__last_name =request.data.get('last_name'),
+                            father_name =  request.data.get('father_name'),
+                            mother_name =  request.data.get('mother_name'),
+                            )
+    except Patient.DoesNotExist:
+        return Response({'error': 'No matching patient found. Please check the provided information.'}, status=status.HTTP_404_NOT_FOUND)
 
+    serializer = varifySelectedPatientSerializeer(patient_id)
+    return Response(serializer.data, status=status.HTTP_200_OK)               
+  
 
 # @api_view(['GET'])
 # @permission_classes([IsAuthenticated , IsAdminManagerRole])
@@ -183,6 +218,26 @@ def change_donation_status(request, donation_id):
 
     if not new_status:
         return Response({'error': 'donation_status is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if new_status == DonationStatus.APPROVAL:
+        donation.donation_status = DonationStatus.APPROVAL
+        donation.save()
+        if donation.donation_type == DonationType.ASSOCIATION:
+            return Response ({'message' : f"Thank you for your donation of ${donation.amount:.2f}."})
+        
+        if donation.donation_type == DonationType.INDIVIDUAL:
+            patient_donations = PatientDonation.objects.filter(donation_id=donation)
+            total_amount = patient_donations.aggregate(total=models.Sum('amount'))['total'] or 0
+
+            return Response({'message' : f"Thank you for your donation. The total amount assigned to patients is ${total_amount:.2f}."}) 
+        # else:
+        #     message = "Thank you for your donation."
+
+        # send_donation_email(
+        #     to_email=donation.email,
+        #     subject="Donation Approved",
+        #     message=message
+        # )
 
     if new_status not in DonationStatus.values:
         return Response({'error': f'Invalid status. Must be one of: {list(DonationStatus.values)}'},

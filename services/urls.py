@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import get_doctor_profile,get_patient_profile,create_patient , create_doctor ,get_users, get_doctors , get_patients , create_appointment , update_appointment_status ,update_patient_profile , update_doctor_profile ,change_patient_status ,update_medical_report , doctor_appointments , get_all_appointments , patient_approved_appointments
+from .views import get_my_donations, get_doctor_profile,get_patient_profile,create_patient , create_doctor ,get_users, get_doctors , get_patients , create_appointment , update_appointment_status ,update_patient_profile , update_doctor_profile ,change_patient_status ,update_medical_report , doctor_appointments , get_all_appointments , patient_approved_appointments
 
 urlpatterns = [
     path('patients/create/', create_patient, name='create_patient'),
@@ -26,5 +26,8 @@ urlpatterns = [
     path('api/create/appointments/', create_appointment, name='create_appointment'),
     path('appointments/<int:appointment_id>/status/', update_appointment_status, name='update_appointment_status'),
     path('appointments/<int:appointment_id>/medical-report/', update_medical_report, name='update-medical-report'),
+
+    path('my-donation/get', get_my_donations, name='get_my_donations'),
+
 
 ]

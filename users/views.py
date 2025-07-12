@@ -1,4 +1,4 @@
-from datetime import timezone
+from django.utils import timezone
 import random
 from django.contrib.auth import authenticate, login
 from django.contrib.auth.models import User as AuthUser 
@@ -41,6 +41,7 @@ class LoginView(APIView):
             return Response({
                 'refresh': str(refresh),
                 'access': str(access_token),
+                'role' : user.role 
             })
         else:
             return Response({"detail": "Incorrect username or password"}, status=status.HTTP_401_UNAUTHORIZED)
@@ -58,14 +59,13 @@ class ForgetPasswordView(APIView):
                 user.varification_code = varification_code
                 user.save()
 
-                # Send the code using SMTP
-                # send_mail(
-                #     subject="Your Password Reset Verification Code",
-                #     message=f"Hello {user.username},\n\nYour password reset verification code is: {varification_code}\n\nIt expires in 10 minutes.",
-                #     from_email="alazem.noreply@gmail.com", 
-                #     recipient_list=[email],
-                #     fail_silently=False,
-                # )
+                send_mail(
+                    subject="Your Password Reset Verification Code",
+                    message=f"Hello {user.first_name} {user.last_name},\n\nYour password reset verification code is: {varification_code}\n\n",
+                    from_email="alazem.noreply@gmail.com", 
+                    recipient_list=[email],
+                    fail_silently=False,
+                )
 
                 return Response({"detail": "Verification code sent to your email."})
             except User.DoesNotExist:
@@ -163,13 +163,13 @@ def create_Volunteer(request):
         user.save()
         volunteer = serializer.save()  # Save the patient using the serializer
         
-        # send_mail(
-        #             subject="Your Password Reset Verification Code",
-        #             message=f"Hello {user.username},\n\nYour password reset verification code is: {varification_code}\n\nIt expires in 10 minutes.",
-        #             from_email="alazem.noreply@gmail.com", 
-        #             recipient_list=[user.email],
-        #             fail_silently=False,
-        #         )
+        send_mail(
+                    subject="Your Password Reset Verification Code",
+                    message=f"Hello {user.username},\n\nYour password reset verification code is: {varification_code}\n\nIt expires in 10 minutes.",
+                    from_email="alazem.noreply@gmail.com", 
+                    recipient_list=[user.email],
+                    fail_silently=False,
+                )
 
         return Response({'message': 'Volunteer created successfully!', 'volunteer_id': str(volunteer.id)}, status=status.HTTP_201_CREATED)
 
@@ -238,20 +238,18 @@ class VarifyAccount(APIView):
             if str(user.varification_code).strip() == str(varification_code).strip():
                 user.is_email_varification = True
                 user.save()
-                print(user.role)
                 if user.role == Role.PATIENT:
                     PatientStatus_data = {
                         "patient_id" :user.patient_user.id
                     }
                     if  user.patient_user.patient_status.first() is None:
-
                         PatientStatusSerializer = PatientStatusSerializers(data=PatientStatus_data)
                         if PatientStatusSerializer.is_valid():
                             patientStatus = PatientStatusSerializer.save()
-
+                            print(patientStatus)
                         if  user.patient_user.patient_status.first().pending_statuses.first() is None:
-                            PendingPatientStatus.objects.create(patientStatus = patientStatus , date = timezone.now())
-            
+                           pending= PendingPatientStatus.objects.create(patientStatus = patientStatus , date = timezone.now())
+                           pending.save()
                 #reset_code.delete()  # Optional: remove the code after use
                 return Response({"detail": "Email Varified Successfuly."})
             else:

@@ -29,19 +29,37 @@ class AssociationDonationSerializer(serializers.ModelSerializer):
 
 
 class DonationSerializer(serializers.ModelSerializer):
-    #patient = serializers.PrimaryKeyRelatedField(queryset=Patient.objects.all()  )
+    patients = serializers.SerializerMethodField()
 
     class Meta:
         model = Donation
         fields = [
+            'id',
             'email',
             'donation_type',
             'donation_status',
             'amount',
             'creation_date',
+            'patients' ,       
+              ]
+    def get_patients(self, obj):
+        patient_donations = obj.patient_donation.all()
+        patients = [pd.patient_id for pd in patient_donations]
+        return varifySelectedPatientSerializeer(patients, many=True).data
+
+class varifySelectedPatientSerializeer(serializers.ModelSerializer):
+    first_name = serializers.CharField(source='user_id.first_name', read_only=True)
+    last_name = serializers.CharField(source='user_id.last_name', read_only=True)
+    
+    class Meta:
+        model = Patient
+        fields = [
+            'id',
+            'first_name',
+            'last_name',
+            'father_name',
+            'mother_name'
         ]
-
-
 
 
 class PatientDonationSerializer(serializers.ModelSerializer):
@@ -51,9 +69,8 @@ class PatientDonationSerializer(serializers.ModelSerializer):
     class Meta:
         model = PatientDonation
         fields = [
-            'id', 
             'patient_id', 
-            'donation_id', 
+            'donation_id',
             'amount'
             
         ]
