@@ -230,8 +230,12 @@ def change_donation_status(request, donation_id):
             total_amount = patient_donations.aggregate(total=models.Sum('amount'))['total'] or 0
 
             return Response({'message' : f"Thank you for your donation. The total amount assigned to patients is ${total_amount:.2f}."}) 
-        # else:
-        #     message = "Thank you for your donation."
+    
+    elif new_status == DonationStatus.REJECTED:
+        donation.donation_status = DonationStatus.REJECTED
+        donation.save()
+        return Response ({'message' : f"Soory, your donation request is rejected"})
+
 
         # send_donation_email(
         #     to_email=donation.email,
