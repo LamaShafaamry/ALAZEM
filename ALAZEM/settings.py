@@ -53,6 +53,8 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
 
+    'corsheaders',
+
 
 
     
@@ -75,6 +77,11 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+
+ 
+    'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    
 
 ]
 
@@ -169,3 +176,14 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'alazem.noreply@gmail.com'
 EMAIL_HOST_PASSWORD = 'ipji gyni vznk khus'     
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+]
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+]
+CORS_ALLOW_CREDENTIALS = True
