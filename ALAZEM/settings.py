@@ -57,7 +57,7 @@ INSTALLED_APPS = [
 
 
 
-    
+    'homepage.apps.HomepageConfig',
     'services.apps.ServicesConfig',
     'users.apps.UsersConfig',
     'donations.apps.DonationsConfig'

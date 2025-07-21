@@ -3,10 +3,10 @@ import random
 from django.contrib.auth import authenticate, login
 from django.contrib.auth.models import User as AuthUser 
 from django.http import JsonResponse
-from ALAZEM.midlware.role_protection import IsAdminManagerRole, IsManagerRole , IsVolunteerRole
-from services.models import Patient, PendingPatientStatus, RegistrationPatientStatus
+from ALAZEM.midlware.role_protection import IsAdminManagerRole, IsManagerRole, IsPatientRole , IsVolunteerRole
+from services.models import Patient, PatientStatus, PendingPatientStatus, RegistrationPatientStatus, TransitionPatientStatus
 from services.serializers import PatientStatusSerializers
-from users.models import Note, Role ,User , Volunteer, VolunteerStatus, WithdrawalRequest
+from users.models import Note, Role ,User , Volunteer, VolunteerStatus, WithdrawalRequest, WithdrawalrStatus
 from .serializers import ForgetPasswordRequestSerializer, NoteSerializer, UserSerializer, Volunteerserializers , VolunteerAssignmentSerializer, WithdrawalRequestSerializer, WithdrawalRequestSerializerForManager
 
 import json
@@ -72,23 +72,6 @@ class ForgetPasswordView(APIView):
                 return Response({"detail": "User with this email does not exist."}, status=404)
         return Response(serializer.errors, status=400)
 
-
-# class VerifyResetCodeView(APIView):
-#     def post(self, request):
-#         user = User.objects.get(email=email)
-#         serializer = VerifyCodeSerializer(data=request.data)
-#         if serializer.is_valid():
-#             email = serializer.validated_data['email']
-#             varification_code = serializer.validated_data['varification_code']
-#             try:
-                
-#                 reset_code = user.filter(varification_code =varification_code)
-#                 if reset_code and reset_code.is_valid():
-#                     return Response({"detail": "Code is valid."})
-#                 return Response({"detail": "Invalid or expired code."}, status=400)
-#             except User.DoesNotExist:
-#                 return Response({"detail": "User does not exist."}, status=404)
-#         return Response(serializer.errors, status=400)
 
 
 class ResetNewPasswordView(APIView):
@@ -420,18 +403,75 @@ def list_all_notes(request):
 
 
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated, IsVolunteerRole])
-def submit_withdrawal_request(request):
-    volunteer = Volunteer.objects.get(user_id=request.user)
+# @api_view(['POST'])
+# @permission_classes([IsAuthenticated, IsVolunteerRole ,IsPatientRole])
+# def submit_withdrawal_request(request):
+#     if IsVolunteerRole:
+#         volunteer = Volunteer.objects.get(user_id=request.user)
 
-    if hasattr(volunteer, 'withdrawal_request'):
+#         if hasattr(volunteer, 'withdrawal_request'):
+#             return Response({'error': 'You have already submitted a withdrawal request.'}, status=400)
+
+#         serializer = WithdrawalRequestSerializer(data=request.data)
+#         if serializer.is_valid():
+#             WithdrawalRequest.objects.create(
+#                 user=volunteer,
+#                 cause=serializer.validated_data['cause']
+#             )
+#             return Response({'message': 'Withdrawal request submitted successfully.'})
+#     if IsPatientRole:
+#         patient = Patient.objects.get(user_id=request.user)
+
+#         if hasattr(patient, 'withdrawal_request'):
+#             return Response({'error': 'You have already submitted a withdrawal request.'}, status=400)
+
+#         serializer = WithdrawalRequestSerializer(data=request.data)
+#         if serializer.is_valid():
+#             WithdrawalRequest.objects.create(
+#                 user=patient,
+#                 cause=serializer.validated_data['cause']
+#             )
+#             return Response({'message': 'Withdrawal request submitted successfully.'})
+#     return Response(serializer.errors, status=400)
+
+
+
+# @api_view(['POST'])
+# @permission_classes([IsAuthenticated, IsVolunteerRole])
+# def submit_withdrawal_request(request):
+#     volunteer = Volunteer.objects.get(user_id=request.user)
+
+#     if hasattr(volunteer, 'withdrawal_request'):
+#         return Response({'error': 'You have already submitted a withdrawal request.'}, status=400)
+
+#     serializer = WithdrawalRequestSerializer(data=request.data)
+#     if serializer.is_valid():
+#         WithdrawalRequest.objects.create(
+#             user=volunteer,
+#             cause=serializer.validated_data['cause']
+#         )
+#         return Response({'message': 'Withdrawal request submitted successfully.'})
+    
+#     return Response(serializer.errors, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def submit_withdrawal_request(request):
+    user = request.user
+
+    if not hasattr(user, 'volunteer_user') and not hasattr(user, 'patient_user'):
+        return Response({'error': 'Only volunteers or patients can submit withdrawal requests.'}, status=403)
+
+    # Prevent duplicate request from same user
+    if WithdrawalRequest.objects.filter(user=user ).exclude(status=WithdrawalrStatus.REJECTED).exists() :
+        
         return Response({'error': 'You have already submitted a withdrawal request.'}, status=400)
 
     serializer = WithdrawalRequestSerializer(data=request.data)
     if serializer.is_valid():
         WithdrawalRequest.objects.create(
-            volunteer=volunteer,
+            user=user,
             cause=serializer.validated_data['cause']
         )
         return Response({'message': 'Withdrawal request submitted successfully.'})
@@ -439,15 +479,20 @@ def submit_withdrawal_request(request):
     return Response(serializer.errors, status=400)
 
 
-
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdminManagerRole])
 def list_withdrawal_requests(request):
-    requests = WithdrawalRequest.objects.select_related('volunteer').all()
+    requests = WithdrawalRequest.objects.select_related('user').all()
     status = request.query_params.get('status', None)
-    if status:
-        requests = requests.filter(is_approved__icontains=status) 
-    
+    if status is not None:
+        requests = requests.filter(status__icontains=status) 
+    # if status == WithdrawalrStatus.PENDING:
+    #     requests = requests.filter(status__icontains=status) 
+    # if status == WithdrawalrStatus.APPROVED:
+    #     requests = requests.filter(status__icontains=status) 
+    # if status == WithdrawalrStatus.REJECTED:
+    #     requests = requests.filter(status__icontains=status) 
+        
     serializer = WithdrawalRequestSerializer(requests, many=True)
     return Response(serializer.data)
 
@@ -470,18 +515,33 @@ def handle_withdrawal_request(request, request_id):
     withdrawal.save()
 
     if action:
-        volunteer = withdrawal.volunteer
-        withdrawal.volunteer.user_id.is_active = False
-        withdrawal.volunteer.user_id.email = withdrawal.volunteer.user_id.email + "/deleted"
-        withdrawal.volunteer.user_id.username = withdrawal.volunteer.user_id.email
-        withdrawal.volunteer.user_id.save()
+        user = withdrawal.user
+        withdrawal.user.is_active = False
+        withdrawal.user.email = withdrawal.user.email + "/deleted"
+        withdrawal.user.username = withdrawal.user.email
+        withdrawal.user.save()
 
-        volunteer.status = VolunteerStatus.WITHDRAWN
+        if user.role  == Role.VOLUNTEE:
+            user.volunteer_user =user.volunteer_user.VolunteerStatus.WITHDRAWN
+            if user.volunteer_user.patient_id:
+                user.volunteer_user.patient_id = None
 
-        if volunteer.patient_id:
-            volunteer.patient_id = None
+        if user.role == Role.PATIENT:
+            patient_status = PatientStatus.objects.filter(patient_id__id = user.patient_user.id).first()
+            registered_patient_status= patient_status.registration_statuses.first()
+            if registered_patient_status is not None:
+                registered_patient_status.delet()
+                TransitionPatientStatus.objects.create(
+                patientStatus=patient_status,
+                date=timezone.now().date()
+            )
 
-        volunteer.save()
+        patient_status.patient_id.user_id.is_active =  False
+        patient_status.patient_id.user_id.save()
+        # pendig_patient_status.delete()
+        return Response({'message': 'Patient approved and registered.'}, status=status.HTTP_200_OK)
+
+        user.volunteer_user.save()
 
         return Response({'message': 'Request approved. Volunteer deactivated. unassigned from patient'})
     else:

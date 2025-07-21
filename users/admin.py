@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User , Role , Volunteer , Note , WithdrawalRequest
+from .models import User  , Volunteer , Note , WithdrawalRequest
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
 

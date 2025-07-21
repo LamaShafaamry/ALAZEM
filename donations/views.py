@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.db import transaction
 from rest_framework.permissions import IsAuthenticated 
 from ALAZEM.midlware.role_protection import IsAdminManagerRole
-from rest_framework import status
+# from rest_framework import status
 from django.core.mail import send_mail
 
 from donations import models

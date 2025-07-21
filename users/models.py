@@ -10,6 +10,7 @@ from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 
 
+
 class Role(models.TextChoices):
        ADMIN =  'ADM', 'Admin'
        MANAGER = 'MAN' , ' Manager'      
@@ -93,16 +94,24 @@ class Note(models.Model):
     def __str__(self):
          return f"{self.id} - {self.patient_id} : {self.volunteer_id}"
 
+class WithdrawalrStatus(models.TextChoices):
+    APPROVED = 'APP', 'Approved'
+    PENDING = 'PEN', 'Pending'
+    REJECTED = 'REJ', 'Rejected'
 
 
 class WithdrawalRequest(models.Model):
     id = models.AutoField(primary_key=True,unique=True,editable=False)
-    volunteer = models.OneToOneField(Volunteer, on_delete=models.CASCADE, related_name='withdrawal_request')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='withdrawal_requests')  # Allow multiple
     cause = models.TextField()
-    is_approved = models.BooleanField(null=True, blank=True)  # None = pending, True = approved, False = rejected
+    status = models.CharField(
+            max_length=3,
+            choices=WithdrawalrStatus.choices,
+            default=WithdrawalrStatus.PENDING,
+    )  # None = pending, True = approved, False = rejected
     creation_date = models.DateTimeField(default=timezone.now())
 
     def __str__(self):
-        return f"{self.id} -Withdrawal Request from {self.volunteer.first_name} {self.volunteer.last_name} - {self.creation_date}"
+        return f"{self.id} -Withdrawal Request from {self.user.first_name} {self.user.last_name} - {self.creation_date}"
 
 

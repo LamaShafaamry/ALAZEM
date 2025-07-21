@@ -105,5 +105,4 @@ class Appointment(models.Model):
     medical_report = models.CharField(max_length=500 , null= True , blank= True)
 
     def __str__(self):
-       # return f"Appointment with {self.doctor_id} for {self.patient_id} at {self.appointment_date}"
-        return f"Appointment with {self.patient_id.user_id.first_name} {self.patient_id.user_id.last_name} for {self.doctor_id.user_id.first_name} {self.doctor_id.user_id.last_name} at {self.appointment_date}"
+        return f"Appointment with {self.patient_id.user_id.first_name} {self.patient_id.user_id.last_name} for {self.doctor_id.user_id.first_name} {self.doctor_id.user_id.last_name} "

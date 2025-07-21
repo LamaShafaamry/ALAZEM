@@ -1,3 +1,4 @@
+from datetime import timedelta
 import random
 from ALAZEM import settings
 from donations.models import DonationStatus, PatientDonation
@@ -345,6 +346,9 @@ def change_patient_status(request,patient_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated ,IsAdminManagerRole ])
 def create_appointment(request):
+
+    APPOINTMENT_DURATION =timedelta(minutes=60) 
+
     appointment_data ={
         "patient_id" : request.data.get('patient_id'),
         "doctor_id" : request.data.get('doctor_id'),
@@ -357,14 +361,37 @@ def create_appointment(request):
         patient_id = serializer.validated_data['patient_id']
         doctor_id = serializer.validated_data['doctor_id']
         appointment_date = serializer.validated_data['appointment_date']
+        appointment_end = appointment_date + APPOINTMENT_DURATION
 
-        appointment_date = appointment_date.date()
+        print(appointment_date)
+        print(appointment_end)
+     # Check for overlapping appointments for the same doctor
+        conflicting_appointments = Appointment.objects.filter(
+            doctor_id=doctor_id,
+            appointment_date__lt= appointment_end,
+            appointment_date__gt= appointment_date - APPOINTMENT_DURATION
+        )
 
+        conflicting_patientappointments = Appointment.objects.filter(
+            patient_id=patient_id,
+            appointment_date__lt=appointment_end,
+            appointment_date__gt=appointment_date - APPOINTMENT_DURATION
+        )
+        if conflicting_appointments.exists():
+            return Response(
+                {'error': 'The doctor already has an appointment during this time slot.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if conflicting_patientappointments.exists():
+            return Response(
+                {'error': 'The patient already has an appointment during this time slot.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        if Appointment.objects.filter(doctor_id=doctor_id, appointment_date__date=appointment_date).exists():
-            return Response({'error': 'The doctor already has an appointment at this time.'}, status=status.HTTP_400_BAD_REQUEST)
-        if Appointment.objects.filter(patient_id=patient_id, appointment_date__date=appointment_date).exists():
-            return Response({'error': 'The patent already has an appointment at this time.'}, status=status.HTTP_400_BAD_REQUEST)
+        # if Appointment.objects.filter(doctor_id=doctor_id, appointment_date__date=appointment_date).exists():
+        #     return Response({'error': 'The doctor already has an appointment at this time.'}, status=status.HTTP_400_BAD_REQUEST)
+        # if Appointment.objects.filter(patient_id=patient_id, appointment_date__date=appointment_date).exists():
+        #     return Response({'error': 'The patent already has an appointment at this time.'}, status=status.HTTP_400_BAD_REQUEST)
         
         appointment = serializer.save()
         return Response({'message': 'Appointment created successfully!', 'appointment_id': appointment.id}, status=status.HTTP_201_CREATED)
