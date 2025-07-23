@@ -4,12 +4,6 @@ from django.db import models
 from django.utils import timezone
 
 
-import uuid
-
-from django.db.models.signals import post_save, post_delete
-from django.dispatch import receiver
-
-
 
 class Role(models.TextChoices):
        ADMIN =  'ADM', 'Admin'
@@ -45,7 +39,7 @@ class User(AbstractUser):
     is_email_varification = models.BooleanField(default= True)
 
     def __str__(self):
-            return self.username
+            return f"{self.pk}- {self.first_name} {self.last_name}  ({self.role})"
 
 
 

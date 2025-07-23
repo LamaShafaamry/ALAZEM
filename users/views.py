@@ -1,3 +1,4 @@
+from django.forms import ValidationError
 from django.utils import timezone
 import random
 from django.contrib.auth import authenticate, login
@@ -9,7 +10,7 @@ from services.serializers import PatientStatusSerializers
 from users.models import Note, Role ,User , Volunteer, VolunteerStatus, WithdrawalRequest, WithdrawalrStatus
 from .serializers import ForgetPasswordRequestSerializer, NoteSerializer, UserSerializer, Volunteerserializers , VolunteerAssignmentSerializer, WithdrawalRequestSerializer, WithdrawalRequestSerializerForManager
 
-import json
+# import json
 from rest_framework import status
 from rest_framework.decorators import api_view ,permission_classes
 from rest_framework.response import Response
@@ -17,27 +18,25 @@ from rest_framework.views import APIView
 from .serializers import Volunteerserializers
 from rest_framework.permissions import IsAuthenticated 
 from django.shortcuts import get_object_or_404
+from django.contrib.auth.password_validation import validate_password
 
 
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
-from django.utils.encoding import force_bytes
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.core.mail import send_mail
 
 
 class LoginView(APIView):
     def post(self, request):
-        username = request.data.get("username")
+        email = request.data.get("email")
         password = request.data.get("password")
 
-        user = authenticate(username=username, password=password)
+        user = authenticate(email=email, password=password)
 
         if user:
             refresh = RefreshToken.for_user(user)
             access_token= refresh.access_token
             access_token['role'] = user.role if user.role else None
-            #access_token['role']= user.role
             return Response({
                 'refresh': str(refresh),
                 'access': str(access_token),
@@ -59,14 +58,16 @@ class ForgetPasswordView(APIView):
                 user.varification_code = varification_code
                 user.save()
 
-                send_mail(
+                try:
+                    send_mail(
                     subject="Your Password Reset Verification Code",
                     message=f"Hello {user.first_name} {user.last_name},\n\nYour password reset verification code is: {varification_code}\n\n",
                     from_email="alazem.noreply@gmail.com", 
                     recipient_list=[email],
                     fail_silently=False,
                 )
-
+                except:
+                    pass
                 return Response({"detail": "Verification code sent to your email."})
             except User.DoesNotExist:
                 return Response({"detail": "User with this email does not exist."}, status=404)
@@ -76,7 +77,14 @@ class ForgetPasswordView(APIView):
 
 class ResetNewPasswordView(APIView):
     def post(self, request):
-        
+
+        try:
+            validate_password(request.data.get("new_password"))  # Optional: pass user=User instance if needed
+        except ValidationError as e:
+            return Response(
+                {"errors": e.messages},  # Returns a list of validation messages
+                status=status.HTTP_400_BAD_REQUEST
+            )
         email = request.data.get('email')
         varification_code = request.data.get('varification_code')
         new_password = request.data.get('new_password')
@@ -106,7 +114,13 @@ def create_Volunteer(request):
     if User.objects.filter(email=request.data.get('email')).exists():
         return Response("{'error' : 'A user with this email already exists.'}") 
     
-
+    try:
+        validate_password(request.data.get("password"))  # Optional: pass user=User instance if needed
+    except ValidationError as e:
+        return Response(
+            {"errors": e.messages},  # Returns a list of validation messages
+            status=status.HTTP_400_BAD_REQUEST
+        )
     user = User.objects.create_user(
         username=request.data.get('email'),
         password=request.data.get('password'),
@@ -146,14 +160,16 @@ def create_Volunteer(request):
         user.save()
         volunteer = serializer.save()  # Save the patient using the serializer
         
-        send_mail(
-                    subject="Your Password Reset Verification Code",
-                    message=f"Hello {user.username},\n\nYour password reset verification code is: {varification_code}\n\nIt expires in 10 minutes.",
-                    from_email="alazem.noreply@gmail.com", 
-                    recipient_list=[user.email],
-                    fail_silently=False,
-                )
-
+        try:
+            send_mail(
+                        subject="Your Password Reset Verification Code",
+                        message=f"Hello {user.username},\n\nYour password reset verification code is: {varification_code}\n\nIt expires in 10 minutes.",
+                        from_email="alazem.noreply@gmail.com", 
+                        recipient_list=[user.email],
+                        fail_silently=False,
+                    )
+        except:
+            pass
         return Response({'message': 'Volunteer created successfully!', 'volunteer_id': str(volunteer.id)}, status=status.HTTP_201_CREATED)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -506,46 +522,100 @@ def handle_withdrawal_request(request, request_id):
         withdrawal = WithdrawalRequest.objects.get(id=request_id)
     except WithdrawalRequest.DoesNotExist:
         return Response({'error': 'Request not found'}, status=404)
-
+    user = withdrawal.user
+    original_email = user.email
     action = request.data.get('approve')
     if action is None:
         return Response({'error': 'Missing "approve" field (true/false)'}, status=400)
 
     withdrawal.is_approved = bool(action)
+    withdrawal.status = WithdrawalrStatus.APPROVED
     withdrawal.save()
 
     if action:
-        user = withdrawal.user
         withdrawal.user.is_active = False
-        withdrawal.user.email = withdrawal.user.email + "/deleted"
+        withdrawal.user.email = original_email + "/deleted"
         withdrawal.user.username = withdrawal.user.email
         withdrawal.user.save()
 
         if user.role  == Role.VOLUNTEE:
-            user.volunteer_user =user.volunteer_user.VolunteerStatus.WITHDRAWN
-            if user.volunteer_user.patient_id:
-                user.volunteer_user.patient_id = None
+            volunteer = user.volunteer_user  
+            volunteer.status = VolunteerStatus.WITHDRAWN
+            user.volunteer_user.staus =volunteer.status
+            if volunteer.patient_id:
+                volunteer.patient_id = None
 
+            user.volunteer_user.save()
+            try:
+                send_mail(
+                subject="Withdrawal Request Update",
+                message=(f"Dear {user.first_name} {user.last_name},\n\n"
+                    f"Your withdrawal request has been approved.\n"
+                    f"Your account has been deactivated, and any assigned responsibilities have been cleared.\n\n"
+                    f"If you have any questions or require further assistance, feel free to contact us.\n\n"
+                    f"Best regards,\n"
+                    f"The Support Team"
+                ),
+                from_email="alazem.noreply@gmail.com", 
+                recipient_list=[original_email],
+                fail_silently=False,
+            )
+            except :
+                pass
+                
+            return Response({'message': 'Request approved. Volunteer deactivated. unassigned from patient'})
+        
         if user.role == Role.PATIENT:
             patient_status = PatientStatus.objects.filter(patient_id__id = user.patient_user.id).first()
             registered_patient_status= patient_status.registration_statuses.first()
             if registered_patient_status is not None:
-                registered_patient_status.delet()
+                registered_patient_status.delete()
                 TransitionPatientStatus.objects.create(
                 patientStatus=patient_status,
                 date=timezone.now().date()
             )
-
-        patient_status.patient_id.user_id.is_active =  False
+        volunteer = user.patient_user.assigned_volunteer
+        volunteer.patient_id = None
+        volunteer.save()
+        user.patient_user.save()
         patient_status.patient_id.user_id.save()
-        # pendig_patient_status.delete()
-        return Response({'message': 'Patient approved and registered.'}, status=status.HTTP_200_OK)
 
-        user.volunteer_user.save()
+        try:
+            send_mail(
+                    subject="Withdrawal Request Update",
+                    message=(f"Dear {user.first_name} {user.last_name},\n\n"
+                        f"Your withdrawal request has been approved.\n"
+                        f"Your account has been deactivated, and any assigned responsibilities have been cleared.\n\n"
+                        f"If you have any questions or require further assistance, feel free to contact us.\n\n"
+                        f"Best regards,\n"
+                        f"The Support Team"
+                    ),
+                    from_email="alazem.noreply@gmail.com", 
+                    recipient_list=[original_email],
+                    fail_silently=False,
+                )
+        except:
+            pass
+        return Response({'message': 'Request approved. Patient deactivated. unassigned from volunteer'})
 
-        return Response({'message': 'Request approved. Volunteer deactivated. unassigned from patient'})
     else:
-        return Response({'message': 'Request rejected.'})
+        try:
+            send_mail(
+                subject="Withdrawal Request Update",
+                message=(
+                    f"Dear {user.first_name} {user.last_name},\n\n"
+                    f"Your withdrawal request has been reviewed and was not approved at this time.\n\n"
+                    f"If you have any questions or would like to discuss this further, please don't hesitate to contact us.\n\n"
+                    f"Best regards,\n"
+                    f"The Support Team"
+                ),
+                from_email="alazem.noreply@gmail.com",
+                recipient_list=[original_email],
+                fail_silently=False,
+            )
+        except:
+            pass
+        return Response({'message': 'Request rejected Sucssefully.'})
 
 
 

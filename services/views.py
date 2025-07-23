@@ -1,5 +1,7 @@
 from datetime import timedelta
 import random
+
+from django.forms import ValidationError
 from ALAZEM import settings
 from donations.models import DonationStatus, PatientDonation
 from donations.serializers import PatientDonationSerializer
@@ -17,6 +19,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from ALAZEM.midlware.role_protection import IsDoctorRole , IsAdminManagerRole , IsPatientRole
 from django.core.mail import send_mail
+from django.contrib.auth.password_validation import validate_password
 
 
 
@@ -30,7 +33,13 @@ def create_patient(request):
     if User.objects.filter(email=request.data.get('email')).exists():
         return Response("{'error' : 'A user with this email already exists.'}") 
     
-
+    try:
+        validate_password(request.data.get("new_password"))  # Optional: pass user=User instance if needed
+    except ValidationError as e:
+            return Response(
+                {"errors": e.messages},  # Returns a list of validation messages
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
     user = User.objects.create_user(
         username=request.data.get('email'),
@@ -78,7 +87,16 @@ def create_patient(request):
         user.save()
 
         serializer.save() 
-
+        try:
+            send_mail(
+                        subject="Account Verification Code",
+                        message=f"Hello {user.username},\n\nYour verification code is: {varification_code}\n\n",
+                        from_email="alazem.noreply@gmail.com", 
+                        recipient_list=[user.email],
+                        fail_silently=False,
+                    )
+        except:
+            pass
         return Response({'message': 'Patient created successfully!'}, status=status.HTTP_201_CREATED)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -293,7 +311,10 @@ def get_users(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated , IsAdminManagerRole])
 def change_patient_status(request,patient_id):
- 
+    try:
+        patient = Patient.objects.get(id = patient_id)
+    except:
+        return Response({'error': 'Patient not found'}, status=status.HTTP_404_NOT_FOUND)
     patient_status = PatientStatus.objects.filter(patient_id__id = patient_id).first()
     pendig_patient_status= patient_status.pending_statuses.first()
     if pendig_patient_status is None:
@@ -305,29 +326,36 @@ def change_patient_status(request,patient_id):
         # Create RegistrationPatientStatus
         RegistrationPatientStatus.objects.create(
             patientStatus=patient_status,
-            date=timezone.now().date()
+            date=timezone.now()
         )
 
         patient_status.patient_id.user_id.is_active =  True
         patient_status.patient_id.user_id.save()
         pendig_patient_status.delete()
+        try:
+            print(patient.user_id.first_name)
+            send_mail(
+            subject="Registration Request Update",
+            message=(f"Welcom {patient.user_id.first_name} {patient.user_id.last_name},\n\n"
+                f"Your Registration request has been approved.\n"
+                f"Your account has been activated.\n\n"
+                f"If you have any questions or require further assistance, feel free to contact us.\n\n"
+                f"Best regards,\n"
+                f"The Support Team"
+            ),
+            from_email="alazem.noreply@gmail.com", 
+            recipient_list=[patient.user_id.email],
+            fail_silently=False,
+            )
+        except:
+            pass
         return Response({'message': 'Patient approved and registered.'}, status=status.HTTP_200_OK)
     
-    elif action == 'transition':
-        TransitionPatientStatus.objects.create(
-            patientStatus=patient_status,
-            date=timezone.now().date()
-        )
-
-        patient_status.patient_id.user_id.is_active =  False
-        patient_status.patient_id.user_id.save()
-        pendig_patient_status.delete()
-        return Response({'message': 'Patient approved and registered.'}, status=status.HTTP_200_OK)
 
     elif action == 'death':
         DeathPatientStatus.objects.create(
             patientStatus=patient_status,
-            date=timezone.now().date()
+            date=timezone.now()
         )
 
         patient_status.patient_id.user_id.is_active =  False
