@@ -1,11 +1,17 @@
+import base64
 from datetime import timedelta
+import time
+import hashlib
+import hmac
+import os
 import random
-
+import django
 from django.forms import ValidationError
+from django.shortcuts import get_object_or_404
 from ALAZEM import settings
 from donations.models import DonationStatus, PatientDonation
 from donations.serializers import PatientDonationSerializer
-from .models import DeathPatientStatus, Patient , PatientStatus , PendingPatientStatus , Doctor , Appointment ,AppointmentStatus, RegistrationPatientStatus, RejectedPatientStatus , WithdrawalPatientStatus
+from .models import DeathPatientStatus, DoctorStatus, Patient , PatientStatus , PendingPatientStatus , Doctor , Appointment ,AppointmentStatus, RegistrationPatientStatus, RejectedPatientStatus , WithdrawalPatientStatus
 from django.utils import timezone
 
 from rest_framework import status
@@ -20,7 +26,9 @@ from rest_framework.views import APIView
 from ALAZEM.midlware.role_protection import IsDoctorRole , IsAdminManagerRole , IsPatientRole
 from django.core.mail import send_mail
 from django.contrib.auth.password_validation import validate_password
-
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
 from django.utils.html import strip_tags
 
 
@@ -59,8 +67,6 @@ def create_patient(request):
 
 
     patient_data = {
-        "first_name": request.data.get("first_name"),
-        "last_name": request.data.get("last_name"),
         "father_name": request.data.get("father_name"),
         "mother_name": request.data.get("mother_name"),
         "date_of_birth": request.data.get("date_of_birth"),
@@ -212,8 +218,8 @@ def update_doctor_profile(request):
  
 
 @api_view(['POST'])
+@permission_classes([IsAuthenticated, IsAdminManagerRole])
 def create_doctor(request):
-    # Check if the role "Doctor" exists
     doctor_role = Role.DOCTOR
     
     if doctor_role is None:
@@ -226,7 +232,6 @@ def create_doctor(request):
     # Create the user
     user = User.objects.create_user(
         username=request.data.get('email'),
-        password=request.data.get('password'),
         email=request.data.get('email', ''),  # Optional email field
         first_name=request.data.get("first_name"),
         last_name=request.data.get("last_name"),
@@ -236,8 +241,6 @@ def create_doctor(request):
 
     # Prepare doctor data
     doctor_data = {
-        "first_name": request.data.get('first_name'),  
-        "last_name": request.data.get('last_name'),
         "speciality": request.data.get('speciality'),
         "user_id": user.id,
     }
@@ -246,9 +249,182 @@ def create_doctor(request):
     serializer = DoctorSerializers(data=doctor_data)
     if serializer.is_valid():
         doctor = serializer.save()
+        
+        token = generate_token(user.id)
+        print(token)
+        subject = "تفعيل حسابك في نظام العيادة"
+
+        reset_link = f"http://127.0.0.1:8000/users/auth/reset-password?token={token}"  # Replace with your actual reset link logic
+
+        html_message = f"""
+        <html lang="ar" dir="rtl">
+        <body style="font-family: Arial, sans-serif; direction: rtl; text-align: right; background-color: #f4f4f4; padding: 20px;">
+            <div style="max-width: 600px; margin: auto; background-color: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #ddd;">
+                <h2 style="color: #333;">مرحبًا دكتور {doctor.user_id.first_name} {doctor.user_id.last_name}،</h2>
+
+                <p>تم إنشاء حسابك بنجاح في نظام العيادة من قبل الإدارة.</p>
+
+                <p>قبل أن تتمكن من تسجيل الدخول، يجب عليك تعيين كلمة مرور جديدة باستخدام الرابط التالي:</p>
+
+                <p style="margin: 20px 0;">
+                    <a href="{reset_link}" style="display: inline-block; background-color: #2b8a3e; color: white; padding: 12px 20px; border-radius: 6px; text-decoration: none;">
+                        تعيين كلمة المرور
+                    </a>
+                </p>
+
+                <p>هذا الرابط صالح لفترة محدودة. إذا لم تطلب هذا البريد، يرجى تجاهله.</p>
+
+                <p>مع خالص التقدير،<br>
+                فريق الدعم - جمعية العزم للكفيفات المسنات</p>
+            </div>
+        </body>
+        </html>
+        """
+
+        plain_message = strip_tags(html_message)
+
+        send_mail(
+            subject=subject,
+            message=plain_message,
+            from_email="alazem.noreply@gmail.com",
+            recipient_list=[doctor.user_id.email],
+            html_message=html_message,
+            fail_silently=False,
+        )
+
         return Response({'message': 'Doctor created successfully!', 'doctor_id': str(doctor.id)}, status=status.HTTP_201_CREATED)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+def generate_token(user_id: int) -> str:
+    timestamp = int(time.time())
+    data = f"{user_id}:{timestamp}".encode("utf-8")  # ✅ text part
+    signature = hmac.new(settings.SECRET_KEY.encode(), data, hashlib.sha256).digest()
+    payload = base64.urlsafe_b64encode(data).decode()  # 🔐 encode data separately
+    sig = base64.urlsafe_b64encode(signature).decode()
+    return f"{payload}.{sig}"
+
+def verify_token(token: str, max_age: int = 3600) -> int | None:
+    try:
+        if '.' not in token:
+            raise ValueError("Token format invalid")
+
+        payload_b64, sig_b64 = token.split(".")
+
+        data = base64.urlsafe_b64decode(payload_b64.encode())
+        signature = base64.urlsafe_b64decode(sig_b64.encode())
+
+        # 🧠 Decode safely now — only UTF-8 data here
+        user_id_str, timestamp_str = data.decode("utf-8").split(":")
+        timestamp = int(timestamp_str)
+
+        # # ⏳ Expiration check
+        # if int(time.time()) - timestamp > max_age:
+        #     raise ValueError("Token expired")
+
+        # 🔁 Validate signature
+        expected_sig = hmac.new(settings.SECRET_KEY.encode(), data, hashlib.sha256).digest()
+        if not hmac.compare_digest(signature, expected_sig):
+            raise ValueError("Invalid signature")
+
+        return int(user_id_str)
+    except Exception as e:
+        print(f"[verify_token] Error: {e}")
+        return None
+
+@api_view(['POST'])
+def registration_doctor(request):
+    if User.objects.filter(email=request.data.get('email')).exists():
+        return Response("{'error' : 'A user with this email already exists.'}") 
+    
+    if request.data.get('password') is None:
+        return Response({'error' : 'Passwoard is requied' },status=status.HTTP_400_BAD_REQUEST ) 
+    try:
+        validate_password(request.data.get("password"))  # Optional: pass user=User instance if needed
+    except ValidationError as e:
+            return Response(
+                {"errors": e.messages},  # Returns a list of validation messages
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+
+    # Create the user
+    user = User.objects.create_user(
+        username=request.data.get('email'),
+        email=request.data.get('email'),  # Optional email field
+        password=request.data.get('password'),
+        first_name=request.data.get("first_name"),
+        last_name=request.data.get("last_name"),
+        phone=request.data.get("phone"),
+        role=Role.DOCTOR,
+        is_active = False,
+        is_email_varification = False
+    )
+
+    # Prepare doctor data
+    doctor_data = {
+        "speciality": request.data.get('speciality'),
+        "user_id": user.id,
+    }
+
+    # Validate and save doctor data
+    serializer = DoctorSerializers(data=doctor_data)
+    if serializer.is_valid():
+        user = User.objects.get(email=user.email)
+        varification_code = f"{random.randint(100000, 999999)}"
+        user.varification_code = varification_code
+        user.save()
+        doctor = serializer.save()  # Save the patient using the serializer
+        
+        try:
+            send_mail(
+                        subject="Your Password Reset Verification Code",
+                        message=f"Hello {user.username},\n\nYour password reset verification code is: {varification_code}\n\n",
+                        from_email="alazem.noreply@gmail.com", 
+                        recipient_list=[user.email],
+                        fail_silently=False,
+                    )
+        except:
+            pass
+        return Response({'message': 'Doctor created successfully!', 'doctor_id': str(doctor.id)}, status=status.HTTP_201_CREATED)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsAdminManagerRole])
+def change_doctor_status(request, doctor_id):
+    status_choice = request.data.get('status')
+
+    if status_choice not in DoctorStatus.values:
+        return Response({'error': 'Invalid status provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    doctor = get_object_or_404(Doctor, id=doctor_id)
+    if status_choice == DonationStatus.APPROVAL:
+        doctor.user_id.is_active= True
+
+    doctor.doctor_status = status_choice
+    doctor.user_id.save()
+    doctor.save()
+
+    serializer = DoctorSerializers(doctor)
+    return Response({'message': f'Doctor status updated to {doctor.doctor_status}.', 'data': serializer.data}, status=status.HTTP_200_OK)
+
+
+
+@api_view(['POST'])
+def set_doctor_password(request):
+    token = request.data.get('token')
+    user_id = verify_token(token)
+    if user_id is None:
+        return Response({'error' : 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
+    print(user_id)
+    user =User.objects.get(id=user_id) 
+    new_password = request.data.get('new_password')
+    user.set_password(new_password)
+    user.save()
+    return Response({"detail": "Password has been reset."})
+          
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsDoctorRole])
@@ -310,12 +486,14 @@ def get_doctors(request):
     doctors_list = Doctor.objects.all()
     name = request.query_params.get('name', None)
     speciality = request.query_params.get('speciality' , None)
-
+    doctor_status = request.query_params.get('status' , None)
     if name:
         doctors_list = doctors_list.filter(first_name__icontains=name) | doctors_list.filter(last_name__icontains=name) 
     if speciality:
         doctors_list = doctors_list.filter(speciality__icontains=speciality)
-        
+    if doctor_status:
+        doctors_list = doctors_list.filter(doctor_status__icontains=doctor_status)
+               
     serializer = DoctorSerializers(doctors_list, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -636,29 +814,103 @@ def doctor_appointments(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsPatientRole])
-def patient_approved_appointments(request):
+def get_patient_appointments(request):
     try:
-        patient = request.user.patient  # Assumes User has OneToOne with Patient
+        patient = request.user.patient_user  # Assumes User has OneToOne with Patient
     except AttributeError:
-        return Response({'error': 'User is not linked to a patient.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'User is not linked to a doctor.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    appointments_list = Appointment.objects.filter(patient_id = patient.id).order_by('-appointment_date')
     # Start with approved appointments
-    approved_appointments = Appointment.objects.filter(
-        patient_id=patient,
-        appointment_status=AppointmentStatus.APPROVAL
-    ).order_by('-appointment_date')
+    status_param = request.query_params.get('status_param', None)
+
+    # Apply filters
+    if status_param and status_param in AppointmentStatus.values:
+        appointments_list = appointments_list.filter(appointment_status=status_param)
+ 
 
     # Optional filter for completion status
     completed_filter = request.query_params.get('completed', None)
 
     if completed_filter is not None:
         if completed_filter.lower() == 'true':
-            approved_appointments = approved_appointments.exclude(medical_report__isnull=True).exclude(medical_report__exact="")
+            appointments_list = appointments_list.exclude(medical_report__isnull=True).exclude(medical_report__exact="")
         elif completed_filter.lower() == 'false':
-            approved_appointments = approved_appointments.filter(medical_report__isnull=True) | approved_appointments.filter(medical_report__exact="")
+            appointments_list = appointments_list.filter(medical_report__isnull=True) | appointments_list.filter(medical_report__exact="")
 
-    serialized = AppointmentSerializer(approved_appointments, many=True)
+    serialized = AppointmentSerializer(appointments_list, many=True)
     return Response(serialized.data, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsPatientRole])
+def cancel_appointments(request , appointment_id):
+    try:
+        appointment = Appointment.objects.get(id=appointment_id)
+    except Appointment.DoesNotExist:
+        return Response({'error': 'Appointment not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if appointment.patient_id.user_id != request.user:
+        return Response({'error': 'You are not allowed to cancel this appointment.'}, status=status.HTTP_403_FORBIDDEN)
+
+    action = request.data.get('action')
+    if appointment.appointment_status == AppointmentStatus.APPROVAL:
+        if action != 'reject':
+            return Response({'error': 'You can only reject appointment'}, status=status.HTTP_400_BAD_REQUEST)
+
+        appointment.appointment_status = AppointmentStatus.REJECTED
+        appointment.approved_date = timezone.now()
+        appointment.save()
+
+
+        subject = "إلغاء الموعد من قبل المريض"
+
+        # Build HTML message
+        html_message = f"""
+        <html lang="ar" dir="rtl">
+        <body style="font-family: Arial, sans-serif; direction: rtl; text-align: right; background-color: #f9f9f9; padding: 20px;">
+            <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #ccc;">
+                <p>عزيزي/عزيزتي <strong>{appointment.doctor_id.user_id.first_name} {appointment.doctor_id.user_id.last_name}</strong>،</p>
+
+                <p>نود إعلامك بأن المريضة <strong>{appointment.patient_id.user_id.first_name} {appointment.patient_id.user_id.last_name}</strong> قد قامت بإلغاء موعدها المحدد بتاريخ <strong>{appointment.appointment_date}</strong>.</p>
+
+                <p>نرجو أخذ العلم بهذا التغيير، وإذا كنت بحاجة إلى تحديث الجدول الزمني ، يمكنك التواصل مع الجمعية.</p>
+
+                <p>مع خالص التقدير،<br>
+                جمعية العزم للكفيفات المسنات</p>
+            </div>
+        </body>
+        </html>
+        """
+
+        # Create plain text version
+        plain_message = strip_tags(html_message)
+
+        # Recipients: doctor and manager
+        recipients = [
+            appointment.doctor_id.user_id.email,
+            # appointment.manager_id.user_id.email  # Assuming this exists in your model
+        ]
+
+        # Send the email
+        send_mail(
+            subject=subject,
+            message=plain_message,
+            from_email="alazem.noreply@gmail.com",
+            recipient_list=recipients,
+            html_message=html_message,
+            fail_silently=False,
+        )
+
+        serializer = AppointmentSerializer(appointment)
+        return Response({
+            'message': 'Appointment rejected.',
+            'appointment': serializer.data
+        }, status=status.HTTP_200_OK)
+
+    return Response({
+                'error': "You can't rejected this appointment.",
+            }, status=status.HTTP_400_BAD_REQUEST)
 
 
 

@@ -82,12 +82,21 @@ class RejectedPatientStatus(models.Model):
 
        
   
+class DoctorStatus(models.TextChoices):
+    APPROVAL = 'APP', 'Approval'
+    PENDING = 'PEN', 'Pending'
+    REJECTED = 'REJ', 'Rejected'
 
 
 class Doctor(models.Model):
     user_id= models.OneToOneField(User, on_delete=models.CASCADE, null=False, blank=False)
     id =models.AutoField(primary_key=True,unique=True,editable=False)
     speciality =models.CharField(max_length=100)
+    doctor_status = models.CharField(
+            max_length=3,
+            choices=DoctorStatus.choices,
+            default=DoctorStatus.PENDING,
+    )
 
     def __str__(self):
         return f"{self.id} - {self.user_id.first_name} {self.user_id.last_name}"
