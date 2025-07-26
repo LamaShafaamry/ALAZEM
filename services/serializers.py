@@ -97,6 +97,7 @@ class DoctorSerializers(serializers.ModelSerializer):
             'email',
             'phone',
             'speciality',
+            'doctor_status',
         ]
 
      
@@ -104,13 +105,19 @@ class DoctorSerializers(serializers.ModelSerializer):
 
 class AppointmentSerializer(serializers.ModelSerializer):
     is_completed = serializers.SerializerMethodField()
-
+    patient_first_name = serializers.CharField(source='patient_id.user_id.first_name', read_only=True)
+    patient_last_name = serializers.CharField(source='patient_id.user_id.last_name', read_only=True)
+    
     class Meta:
         model = Appointment
         fields = [
+            'id',
             'patient_id',
+            'patient_first_name',
+            'patient_last_name',
             'doctor_id',
             'request_date',
+            'appointment_status',
             'appointment_date',
             'medical_report',
             'is_completed',
@@ -118,4 +125,6 @@ class AppointmentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'request_date', 'approved_date', 'appointment_status']
 
     def get_is_completed(self, obj):
-        return bool(obj.medical_report is not None and obj.medical_report.strip() != '')
+        return (obj.medical_report is not None and obj.medical_report.strip() != '')
+    
+ 

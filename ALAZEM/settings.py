@@ -34,7 +34,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-9r&85gdyj#gy2_3py8+2f0cq9###=98xv0ziy0$awqz_i8=0t&'
-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
@@ -194,7 +193,6 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 CORS_ALLOW_CREDENTIALS = True
 
-print("Loading .env from:", os.path.join(BASE_DIR, '.env'))
 env = environ.Env(
     DEBUG=(bool, False)
 )
@@ -203,11 +201,5 @@ environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 
 
 STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY")
-print(STRIPE_SECRET_KEY)
 STRIPE_PUBLISHABLE_KEY = env("STRIPE_PUBLISHABLE_KEY")
 STRIPE_WEBHOOK_KEY = env("STRIPE_WEBHOOK_KEY")
-# load_dotenv(os.path.join(BASE_DIR, '.env'))
-
-# SECRET_KEY = os.getenv("SECRET_KEY")
-# DEBUG = os.getenv("DEBUG") == "True"
-# ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
