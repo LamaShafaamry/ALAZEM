@@ -5,6 +5,7 @@ from django.contrib.auth import authenticate, login
 from django.contrib.auth.models import User as AuthUser 
 from django.http import JsonResponse
 from ALAZEM.midlware.role_protection import IsAdminManagerRole, IsManagerRole, IsPatientRole , IsVolunteerRole
+from services.serializers import PatientSerializer
 from services.models import Patient, PatientStatus, PendingPatientStatus, RegistrationPatientStatus, WithdrawalPatientStatus
 from services.serializers import PatientStatusSerializers
 from users.models import Note, Role ,User , Volunteer, VolunteerStatus, WithdrawalRequest, WithdrawalrStatus
@@ -345,6 +346,21 @@ def add_note(request):
     }, status=status.HTTP_201_CREATED)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsVolunteerRole])
+def get_volunteer_patient_profile(request):
+
+    try:
+        patient = Patient.objects.select_related('user_id').get(
+            user_id=request.user.volunteer_user.patient_id.user_id,
+            user_id__is_active=True
+        )
+    except Patient.DoesNotExist:
+        return Response({"error": "Patient is either inactive or not registered."}, status=403)
+
+    serializer = PatientSerializer(patient)
+    return Response(serializer.data)
+
 
 # @api_view(['POST'])
 # @permission_classes([IsAuthenticated , IsVolunteerRole])
@@ -376,7 +392,7 @@ def add_note(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated , IsAdminManagerRole]) 
+@permission_classes([IsAuthenticated  ]) 
 def list_all_notes(request):
     user = request.user
 
@@ -384,14 +400,14 @@ def list_all_notes(request):
     notes = Note.objects.filter(
         patient_id__user_id__is_active=True,
         volunteer_id__user_id__is_active=True
-)
+).order_by("-id")
     patient_id = request.query_params.get('patient_id', None)
 
     if user.role == Role.PATIENT:
         notes = notes.filter(patient_id__id=user.patient_user.id)
 
     elif user.role == Role.VOLUNTEE:
-         notes = notes.filter(volunnteer_id__id=user.volunteer_user.id)
+         notes = notes.filter(volunteer_id__id=user.volunteer_user.id)
 
     else :
         if patient_id:
@@ -401,6 +417,35 @@ def list_all_notes(request):
     return Response(serializer.data)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsVolunteerRole])
+def edit_notes(request ,note_id):
+    try:
+       
+        content = request.data.get('content')
+
+        if not note_id or content is None:
+            return Response({'error': 'Note ID and content are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            note = Note.objects.get(id=note_id)
+        except Note.DoesNotExist:
+            return Response({'error': 'Note not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if the note belongs to the logged-in volunteer
+        if note.volunteer_id != request.user.volunteer_user:
+            return Response({'error': 'You do not have permission to edit this note.'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Update note content
+        note.content = content
+        note.save()
+
+        # Return updated note
+        serializer = NoteSerializer(note)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # @api_view(['POST'])
 # @permission_classes([IsAuthenticated, IsVolunteerRole])

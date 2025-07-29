@@ -106,14 +106,15 @@ class VolunteerAssignmentSerializer(serializers.Serializer):
 class NoteSerializer(serializers.ModelSerializer):
     volunteer_name = serializers.SerializerMethodField()
     patient_name = serializers.SerializerMethodField()
-
+    creation_date = serializers.DateTimeField(format='%Y-%m-%d %H:%M', read_only=True)
     class Meta:
         model = Note
         fields = [
             'id', 
             'volunteer_name', 
             'patient_name', 
-            'content'
+            'content',
+            'creation_date'
         ]
 
     def get_volunteer_name(self, obj):

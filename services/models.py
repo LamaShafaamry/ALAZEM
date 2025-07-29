@@ -106,6 +106,7 @@ class AppointmentStatus(models.TextChoices):
     APPROVAL = 'APP', 'Approval'
     PENDING = 'PEN', 'Pending'
     REJECTED = 'REJ', 'Rejected'
+    CANCELED = 'CAN', 'Canceled'
 
 
 class Appointment(models.Model):

@@ -107,8 +107,12 @@ class AppointmentSerializer(serializers.ModelSerializer):
     is_completed = serializers.SerializerMethodField()
     patient_first_name = serializers.CharField(source='patient_id.user_id.first_name', read_only=True)
     patient_last_name = serializers.CharField(source='patient_id.user_id.last_name', read_only=True)
-    
+    doctor_first_name = serializers.CharField(source='doctor_id.user_id.first_name', read_only=True)
+    doctor_last_name = serializers.CharField(source='doctor_id.user_id.last_name', read_only=True)
+    appointment_date = serializers.DateTimeField(format='%Y-%m-%d %H:%M', read_only=True)
+    speciality = serializers.CharField(source='doctor_id.speciality', read_only=True)
     class Meta:
+
         model = Appointment
         fields = [
             'id',
@@ -116,6 +120,9 @@ class AppointmentSerializer(serializers.ModelSerializer):
             'patient_first_name',
             'patient_last_name',
             'doctor_id',
+            'doctor_first_name',
+            'doctor_last_name',
+            'speciality',
             'request_date',
             'appointment_status',
             'appointment_date',
