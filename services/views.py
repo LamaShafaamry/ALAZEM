@@ -503,7 +503,7 @@ def get_doctors(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated , IsAdminManagerRole])
 def get_users(request):
-    users_list = User.objects.all()
+    users_list = User.objects.exclude(email__icontains="deleted").order_by('-id')
     name = request.query_params.get('name', None)
     role = request.query_params.get('role', None)
     email = request.query_params.get('email', None)
@@ -922,7 +922,12 @@ def cancel_appointments(request , appointment_id):
 @permission_classes([IsAuthenticated, IsAdminManagerRole])
 def get_all_appointments(request):
     appointments = Appointment.objects.all().order_by('-appointment_date')
-
+    doctor_id = request.query_params.get('doctor_id', None)
+    patient_id = request.query_params.get('patient_id', None)
+    if doctor_id:
+        appointments = appointments.filter(doctor_id=doctor_id)
+    if patient_id:
+        appointments = appointments.filter(patient_id=patient_id)
     serializer = AppointmentSerializer(appointments, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 

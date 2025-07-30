@@ -4,14 +4,20 @@ from services.models import Patient
 
 
 class UserSerializer(serializers.ModelSerializer):
+    date_joined = serializers.DateTimeField(format='%Y-%m-%d %H:%M')
+
     class Meta:
         model = User
         fields = [
+            'id',
            'first_name',
            'last_name',
            'email',
            'phone',
            'role',
+           'date_joined',
+           'is_active',
+           
         ]
 
 class ForgetPasswordRequestSerializer(serializers.Serializer):

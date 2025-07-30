@@ -402,6 +402,7 @@ def list_all_notes(request):
         volunteer_id__user_id__is_active=True
 ).order_by("-id")
     patient_id = request.query_params.get('patient_id', None)
+    volunteer_id = request.query_params.get('volunteer_id', None)
 
     if user.role == Role.PATIENT:
         notes = notes.filter(patient_id__id=user.patient_user.id)
@@ -412,6 +413,8 @@ def list_all_notes(request):
     else :
         if patient_id:
             notes = notes.filter(patient_id__id=patient_id)
+        if volunteer_id:
+            notes = notes.filter(volunteer_id__id=volunteer_id)
     
     serializer = NoteSerializer(notes, many=True)
     return Response(serializer.data)

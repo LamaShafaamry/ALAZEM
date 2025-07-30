@@ -109,7 +109,9 @@ class AppointmentSerializer(serializers.ModelSerializer):
     patient_last_name = serializers.CharField(source='patient_id.user_id.last_name', read_only=True)
     doctor_first_name = serializers.CharField(source='doctor_id.user_id.first_name', read_only=True)
     doctor_last_name = serializers.CharField(source='doctor_id.user_id.last_name', read_only=True)
-    appointment_date = serializers.DateTimeField(format='%Y-%m-%d %H:%M', read_only=True)
+    appointment_date = serializers.DateTimeField(
+    format='%Y-%m-%d %H:%M',
+    input_formats=['%Y-%m-%d %H:%M'])
     speciality = serializers.CharField(source='doctor_id.speciality', read_only=True)
     class Meta:
 
