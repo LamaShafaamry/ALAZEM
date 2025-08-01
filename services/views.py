@@ -487,14 +487,16 @@ def get_doctors(request):
     doctors_list = Doctor.objects.all()
     name = request.query_params.get('name', None)
     speciality = request.query_params.get('speciality' , None)
-    doctor_status = request.query_params.get('status' , None)
+    doctor_status = request.query_params.get('doctor_status' , None)
     if name:
         doctors_list = doctors_list.filter(first_name__icontains=name) | doctors_list.filter(last_name__icontains=name) 
     if speciality:
         doctors_list = doctors_list.filter(speciality__icontains=speciality)
-    if doctor_status:
-        doctors_list = doctors_list.filter(doctor_status__icontains=doctor_status)
-               
+    # if doctor_status:
+    #     doctors_list = doctors_list.filter(doctor_status__icontains=doctor_status)
+    if doctor_status and (doctor_status == DoctorStatus.PENDING or doctor_status == DoctorStatus.REJECTED or doctor_status == DoctorStatus.APPROVAL ):
+        doctors_list = doctors_list.filter(doctor_status = doctor_status)
+          
     serializer = DoctorSerializers(doctors_list, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -697,11 +699,6 @@ def create_appointment(request):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # if Appointment.objects.filter(doctor_id=doctor_id, appointment_date__date=appointment_date).exists():
-        #     return Response({'error': 'The doctor already has an appointment at this time.'}, status=status.HTTP_400_BAD_REQUEST)
-        # if Appointment.objects.filter(patient_id=patient_id, appointment_date__date=appointment_date).exists():
-        #     return Response({'error': 'The patent already has an appointment at this time.'}, status=status.HTTP_400_BAD_REQUEST)
-        
         appointment = serializer.save()
 
         # subject = "تحديث حالة طلب التسجيل"
@@ -710,7 +707,7 @@ def create_appointment(request):
         # <html lang="ar" dir="rtl">
         # <body style="font-family: Arial, sans-serif; direction: rtl; text-align: right; background-color: #f9f9f9; padding: 20px;">
         #     <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #ccc;">
-        #     <p>عزيزي/عزيزتي <strong>{doctor.user_id.first_name} {patient.user_id.last_name}</strong>،</p>
+        #     <p>عزيزي/عزيزتي <strong>{doctor_id.user_id.first_name} {patient_id.user_id.last_name}</strong>،</p>
 
         #     <p>نأسف لإبلاغك بأن طلب التسجيل الخاص بك لم يتم قبوله في الوقت الحالي.</p>
 
@@ -736,6 +733,32 @@ def create_appointment(request):
         #     fail_silently=False,
         # )
 
+        subject = "تأكيد حجز موعد طبي"
+
+        html_message = f"""
+        <html lang="ar" dir="rtl">
+        <body style="font-family: Arial, sans-serif; direction: rtl; text-align: right; background-color: #f9f9f9; padding: 20px;">
+            <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #ccc;">
+                <p>مرحباً <strong>{patient_id.user_id.first_name}</strong>،</p>
+                <p>تم حجز موعد طبي لك مع الدكتور/ة <strong>{doctor_id.user_id.first_name} {doctor_id.user_id.last_name}</strong>.</p>
+                <p><strong>تاريخ الموعد:</strong> {appointment_date.strftime('%Y/%d/%m %H:%M')}</p>
+                <p>مع أطيب التمنيات،<br>فريق جمعية العزم</p>
+            </div>
+        </body>
+        </html>
+        """
+
+        plain_message = strip_tags(html_message)
+
+        send_mail(
+            subject=subject,
+            message=plain_message,
+            from_email="alazem.noreply@gmail.com",
+            recipient_list=[patient_id.user_id.email],
+            html_message=html_message,
+            fail_silently=False,
+        )
+        print(html_message)
         return Response({'message': 'Appointment created successfully!', 'appointment_id': appointment.id}, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
