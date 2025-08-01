@@ -4,14 +4,20 @@ from services.models import Patient
 
 
 class UserSerializer(serializers.ModelSerializer):
+    date_joined = serializers.DateTimeField(format='%Y-%m-%d %H:%M')
+
     class Meta:
         model = User
         fields = [
+            'id',
            'first_name',
            'last_name',
            'email',
            'phone',
            'role',
+           'date_joined',
+           'is_active',
+
         ]
 
 class ForgetPasswordRequestSerializer(serializers.Serializer):
@@ -44,6 +50,8 @@ class Volunteerserializers(serializers.ModelSerializer):
     first_name = serializers.CharField(source='user_id.first_name', read_only=True)
     last_name = serializers.CharField(source='user_id.last_name', read_only=True)
     phone = serializers.CharField(source='user_id.phone', read_only=True)  # If 'phone' is a field on your User model
+    date_joined = serializers.DateTimeField(source='user_id.date_joined' ,format='%Y-%m-%d %H:%M')
+    role =  serializers.CharField(source='user_id.role')
 
     class Meta:
         model = Volunteer
@@ -54,6 +62,7 @@ class Volunteerserializers(serializers.ModelSerializer):
             'last_name',
             'email',
             'phone',
+            'date_joined',
             'father_name',
             'mother_name',
             'date_of_birth',
@@ -66,6 +75,7 @@ class Volunteerserializers(serializers.ModelSerializer):
             'job',
             'previously_affiliated_associations',
             'status',
+            'role',
         ]
 
 
@@ -106,14 +116,15 @@ class VolunteerAssignmentSerializer(serializers.Serializer):
 class NoteSerializer(serializers.ModelSerializer):
     volunteer_name = serializers.SerializerMethodField()
     patient_name = serializers.SerializerMethodField()
-
+    creation_date = serializers.DateTimeField(format='%Y-%m-%d %H:%M', read_only=True)
     class Meta:
         model = Note
         fields = [
             'id', 
             'volunteer_name', 
             'patient_name', 
-            'content'
+            'content',
+            'creation_date'
         ]
 
     def get_volunteer_name(self, obj):

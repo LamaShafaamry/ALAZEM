@@ -65,13 +65,14 @@ class varifySelectedPatientSerializeer(serializers.ModelSerializer):
 class PatientDonationSerializer(serializers.ModelSerializer):
     patient_id = serializers.PrimaryKeyRelatedField(queryset=Patient.objects.all())
     donation_id = serializers.PrimaryKeyRelatedField(queryset=Donation.objects.all())
-    
+    creation_date = serializers.DateTimeField(format='%Y-%m-%d %H:%M',source= 'donation_id.creation_date', read_only =True )
     class Meta:
         model = PatientDonation
         fields = [
             'patient_id', 
             'donation_id',
-            'amount'
+            'amount',
+            'creation_date',
             
         ]
         read_only_fields = ['id']

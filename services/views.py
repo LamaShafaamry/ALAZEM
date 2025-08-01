@@ -23,7 +23,7 @@ from django.contrib.auth.models import User
 from users.models import User , Role 
 from rest_framework.permissions import IsAuthenticated 
 from rest_framework.views import APIView
-from ALAZEM.midlware.role_protection import IsDoctorRole , IsAdminManagerRole , IsPatientRole
+from ALAZEM.midlware.role_protection import IsDoctorRole , IsAdminManagerRole , IsPatientRole, IsVolunteerRole
 from django.core.mail import send_mail
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
@@ -31,6 +31,7 @@ from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.utils.html import strip_tags
 
+from django.db.models import Q
 
 
 @api_view(['POST'])
@@ -44,7 +45,7 @@ def create_patient(request):
         return Response("{'error' : 'A user with this email already exists.'}") 
     
     try:
-        validate_password(request.data.get("new_password"))  # Optional: pass user=User instance if needed
+        validate_password(request.data.get("password"))  # Optional: pass user=User instance if needed
     except ValidationError as e:
             return Response(
                 {"errors": e.messages},  # Returns a list of validation messages
@@ -486,14 +487,16 @@ def get_doctors(request):
     doctors_list = Doctor.objects.all()
     name = request.query_params.get('name', None)
     speciality = request.query_params.get('speciality' , None)
-    doctor_status = request.query_params.get('status' , None)
+    doctor_status = request.query_params.get('doctor_status' , None)
     if name:
         doctors_list = doctors_list.filter(first_name__icontains=name) | doctors_list.filter(last_name__icontains=name) 
     if speciality:
         doctors_list = doctors_list.filter(speciality__icontains=speciality)
-    if doctor_status:
-        doctors_list = doctors_list.filter(doctor_status__icontains=doctor_status)
-               
+    # if doctor_status:
+    #     doctors_list = doctors_list.filter(doctor_status__icontains=doctor_status)
+    if doctor_status and (doctor_status == DoctorStatus.PENDING or doctor_status == DoctorStatus.REJECTED or doctor_status == DoctorStatus.APPROVAL ):
+        doctors_list = doctors_list.filter(doctor_status = doctor_status)
+          
     serializer = DoctorSerializers(doctors_list, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -502,7 +505,7 @@ def get_doctors(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated , IsAdminManagerRole])
 def get_users(request):
-    users_list = User.objects.all()
+    users_list = User.objects.exclude(email__icontains="deleted").order_by('-id')
     name = request.query_params.get('name', None)
     role = request.query_params.get('role', None)
     email = request.query_params.get('email', None)
@@ -696,11 +699,6 @@ def create_appointment(request):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # if Appointment.objects.filter(doctor_id=doctor_id, appointment_date__date=appointment_date).exists():
-        #     return Response({'error': 'The doctor already has an appointment at this time.'}, status=status.HTTP_400_BAD_REQUEST)
-        # if Appointment.objects.filter(patient_id=patient_id, appointment_date__date=appointment_date).exists():
-        #     return Response({'error': 'The patent already has an appointment at this time.'}, status=status.HTTP_400_BAD_REQUEST)
-        
         appointment = serializer.save()
 
         # subject = "تحديث حالة طلب التسجيل"
@@ -709,7 +707,7 @@ def create_appointment(request):
         # <html lang="ar" dir="rtl">
         # <body style="font-family: Arial, sans-serif; direction: rtl; text-align: right; background-color: #f9f9f9; padding: 20px;">
         #     <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #ccc;">
-        #     <p>عزيزي/عزيزتي <strong>{doctor.user_id.first_name} {patient.user_id.last_name}</strong>،</p>
+        #     <p>عزيزي/عزيزتي <strong>{doctor_id.user_id.first_name} {patient_id.user_id.last_name}</strong>،</p>
 
         #     <p>نأسف لإبلاغك بأن طلب التسجيل الخاص بك لم يتم قبوله في الوقت الحالي.</p>
 
@@ -735,6 +733,32 @@ def create_appointment(request):
         #     fail_silently=False,
         # )
 
+        subject = "تأكيد حجز موعد طبي"
+
+        html_message = f"""
+        <html lang="ar" dir="rtl">
+        <body style="font-family: Arial, sans-serif; direction: rtl; text-align: right; background-color: #f9f9f9; padding: 20px;">
+            <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #ccc;">
+                <p>مرحباً <strong>{patient_id.user_id.first_name}</strong>،</p>
+                <p>تم حجز موعد طبي لك مع الدكتور/ة <strong>{doctor_id.user_id.first_name} {doctor_id.user_id.last_name}</strong>.</p>
+                <p><strong>تاريخ الموعد:</strong> {appointment_date.strftime('%Y/%d/%m %H:%M')}</p>
+                <p>مع أطيب التمنيات،<br>فريق جمعية العزم</p>
+            </div>
+        </body>
+        </html>
+        """
+
+        plain_message = strip_tags(html_message)
+
+        send_mail(
+            subject=subject,
+            message=plain_message,
+            from_email="alazem.noreply@gmail.com",
+            recipient_list=[patient_id.user_id.email],
+            html_message=html_message,
+            fail_silently=False,
+        )
+        print(html_message)
         return Response({'message': 'Appointment created successfully!', 'appointment_id': appointment.id}, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -806,7 +830,7 @@ def update_medical_report(request, appointment_id):
 @permission_classes([IsAuthenticated, IsDoctorRole])
 def doctor_appointments(request):
     doctor = request.user.doctor  # Assumes the logged-in user is linked to a Doctor model
-    appointments = Appointment.objects.filter(doctor_id=doctor).order_by('-appointment_date')
+    appointments = Appointment.objects.filter(doctor_id=doctor).order_by('-id')
 
     serializer = AppointmentSerializer(appointments, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
@@ -820,7 +844,13 @@ def get_patient_appointments(request):
     except AttributeError:
         return Response({'error': 'User is not linked to a doctor.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    appointments_list = Appointment.objects.filter(patient_id = patient.id).order_by('-appointment_date')
+    # appointments_list = Appointment.objects.filter(patient_id = patient.id, appointment_status = AppointmentStatus.APPROVAL  appointment_status =AppointmentStatus.REJECT).order_by('-appointment_date')
+    appointments_list = Appointment.objects.filter(
+    patient_id=patient.id,
+).order_by('-id')
+    
+    appointments_list = appointments_list.filter(    Q(appointment_status=AppointmentStatus.APPROVAL) | Q(appointment_status=AppointmentStatus.CANCELED)
+)
     # Start with approved appointments
     status_param = request.query_params.get('status_param', None)
 
@@ -842,7 +872,7 @@ def get_patient_appointments(request):
     return Response(serialized.data, status=status.HTTP_200_OK)
 
 
-@api_view(['POST'])
+@api_view(['GET'])
 @permission_classes([IsAuthenticated, IsPatientRole])
 def cancel_appointments(request , appointment_id):
     try:
@@ -853,12 +883,9 @@ def cancel_appointments(request , appointment_id):
     if appointment.patient_id.user_id != request.user:
         return Response({'error': 'You are not allowed to cancel this appointment.'}, status=status.HTTP_403_FORBIDDEN)
 
-    action = request.data.get('action')
     if appointment.appointment_status == AppointmentStatus.APPROVAL:
-        if action != 'reject':
-            return Response({'error': 'You can only reject appointment'}, status=status.HTTP_400_BAD_REQUEST)
 
-        appointment.appointment_status = AppointmentStatus.REJECTED
+        appointment.appointment_status = AppointmentStatus.CANCELED
         appointment.approved_date = timezone.now()
         appointment.save()
 
@@ -918,7 +945,12 @@ def cancel_appointments(request , appointment_id):
 @permission_classes([IsAuthenticated, IsAdminManagerRole])
 def get_all_appointments(request):
     appointments = Appointment.objects.all().order_by('-appointment_date')
-
+    doctor_id = request.query_params.get('doctor_id', None)
+    patient_id = request.query_params.get('patient_id', None)
+    if doctor_id:
+        appointments = appointments.filter(doctor_id=doctor_id)
+    if patient_id:
+        appointments = appointments.filter(patient_id=patient_id)
     serializer = AppointmentSerializer(appointments, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
